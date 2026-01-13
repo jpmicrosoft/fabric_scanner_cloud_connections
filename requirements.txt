@@ -1,0 +1,13 @@
+# Requirements for running Fabric Scanner API script locally (outside Fabric)
+# Requires Python 3.8 or higher
+
+# Core dependencies
+requests>=2.31.0
+pandas>=2.0.0
+pyarrow>=14.0.0  # Required for parquet support in pandas
+
+# Optional: PySpark (if you want to test Spark functionality locally)
+# pyspark>=3.4.0
+
+# Development/Testing
+# python-dotenv  # For loading .env files with credentials
