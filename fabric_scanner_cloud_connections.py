@@ -573,27 +573,32 @@ def get_access_token_interactive() -> str:
 HEADERS = None
 ACCESS_TOKEN = None
 
-if AUTH_MODE == "delegated":
-    if not RUNNING_IN_FABRIC:
-        print("WARNING: Delegated auth requires Fabric environment. Switching to interactive mode.")
-        AUTH_MODE = "interactive"
-    else:
-        print("Using Fabric delegated authentication...")
-        ACCESS_TOKEN = mssparkutils.credentials.getToken("powerbi")
+def initialize_authentication():
+    """Initialize authentication based on AUTH_MODE. Call this before making API requests."""
+    global HEADERS, ACCESS_TOKEN, AUTH_MODE
+    
+    if AUTH_MODE == "delegated":
+        if not RUNNING_IN_FABRIC:
+            print("WARNING: Delegated auth requires Fabric environment. Switching to interactive mode.")
+            AUTH_MODE = "interactive"
+        else:
+            print("Using Fabric delegated authentication...")
+            ACCESS_TOKEN = mssparkutils.credentials.getToken("powerbi")
+            HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+            return
+
+    if AUTH_MODE == "interactive":
+        print("Using interactive user authentication...")
+        ACCESS_TOKEN = get_access_token_interactive()
         HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
 
-if AUTH_MODE == "interactive":
-    print("Using interactive user authentication...")
-    ACCESS_TOKEN = get_access_token_interactive()
-    HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+    elif AUTH_MODE == "spn":
+        print(f"Using Service Principal authentication (Tenant: {TENANT_ID[:8]}...)")
+        ACCESS_TOKEN = get_access_token_spn()
+        HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
 
-elif AUTH_MODE == "spn":
-    print(f"Using Service Principal authentication (Tenant: {TENANT_ID[:8]}...)")
-    ACCESS_TOKEN = get_access_token_spn()
-    HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
-
-if HEADERS is None:
-    raise RuntimeError(f"Invalid AUTH_MODE: {AUTH_MODE}. Use 'spn', 'delegated', or 'interactive'")
+    if HEADERS is None:
+        raise RuntimeError(f"Invalid AUTH_MODE: {AUTH_MODE}. Use 'spn', 'delegated', or 'interactive'")
 
 # --- Shared Rate Limiter for Parallel Scanning ---
 
@@ -3175,6 +3180,10 @@ def run_cloud_connection_scan(
         lookback_hours = 24  # Default to 1 day
         time_display = "1 day (default)"
     
+    # Initialize authentication if not already done (for programmatic usage)
+    if HEADERS is None:
+        initialize_authentication()
+    
     print("="*80)
     print("Cloud Connection Scanner - Feature Selection")
     print("="*80)
@@ -3648,6 +3657,9 @@ Examples:
         LAKEHOUSE_ID = args.lakehouse_id
     if args.lakehouse_upload_path:
         LAKEHOUSE_UPLOAD_PATH = args.lakehouse_upload_path
+    
+    # Initialize authentication (only when running as script, not during test imports)
+    initialize_authentication()
     
     # Execute based on mode
     try:
