@@ -1,0 +1,124 @@
+{
+  "_comment": "Fabric Scanner Cloud Connections - Configuration File (JSON format)",
+  "_usage": "Copy this file to scanner_config.json and customize as needed",
+  "_precedence": "CLI parameters > Config file > Script defaults",
+  
+  "api": {
+    "_comment": "Scanner API settings for rate limiting and timeouts",
+    "max_parallel_scans": 1,
+    "poll_interval_seconds": 20,
+    "scan_timeout_minutes": 30
+  },
+  
+  "checkpoint": {
+    "_comment": "Checkpoint/resume settings for long-running scans",
+    "enabled": true,
+    "storage": "json",
+    "interval": 100,
+    "directory": "checkpoints"
+  },
+  
+  "auth": {
+    "_comment": "Authentication mode: interactive, spn, or delegated",
+    "mode": "interactive"
+  },
+  
+  "output": {
+    "_comment": "Output directory and table name settings",
+    "curated_dir": "Files/curated/tenant_cloud_connections",
+    "table_name": "tenant_cloud_connections"
+  },
+  
+  "scan": {
+    "_comment": "Scan behavior and optimization settings",
+    "include_personal": true,
+    "incremental_days_back": 1,
+    "enable_hash_optimization": true
+  },
+  
+  "performance": {
+    "_comment": "Performance tuning for Scanner API - 250 is conservative for shared tenants",
+    "batch_size_workspaces": 100,
+    "max_batches_per_hour": 250
+  },
+  
+  "phase3": {
+    "_comment": "Phase 3: Parallel Capacity Scanning - Scan multiple capacities concurrently",
+    "parallel_capacities": 1,
+    "max_calls_per_hour": 450,
+    "capacity_filter": [],
+    "exclude_capacities": [],
+    "capacity_priority": []
+  },
+  
+  "lakehouse": {
+    "_comment": "Local execution only - upload results to Fabric lakehouse",
+    "upload_enabled": false,
+    "workspace_id": "",
+    "lakehouse_id": "",
+    "upload_path": "Files/scanner"
+  },
+  
+  "debug": false,
+  
+  "_examples": {
+    "small_tenant": {
+      "api": {"max_parallel_scans": 5},
+      "checkpoint": {"enabled": false}
+    },
+    "medium_tenant": {
+      "api": {"max_parallel_scans": 3},
+      "checkpoint": {"enabled": true, "interval": 50}
+    },
+    "large_shared_tenant": {
+      "api": {"max_parallel_scans": 1},
+      "checkpoint": {"enabled": true, "interval": 100, "storage": "lakehouse"},
+      "performance": {"max_batches_per_hour": 250}
+    },
+    "local_with_lakehouse": {
+      "lakehouse": {
+        "upload_enabled": true,
+        "workspace_id": "your-workspace-id",
+        "lakehouse_id": "your-lakehouse-id",
+        "upload_path": "Files/scanner"
+      }
+    },
+    "phase3_very_conservative": {
+      "_comment": "Sequential scanning - safest for heavily shared tenants",
+      "phase3": {
+        "parallel_capacities": 1,
+        "max_calls_per_hour": 450
+      }
+    },
+    "phase3_conservative_parallel": {
+      "_comment": "2 workers with reduced quota - conservative parallel approach",
+      "phase3": {
+        "parallel_capacities": 2,
+        "max_calls_per_hour": 300
+      }
+    },
+    "phase3_balanced_parallel": {
+      "_comment": "2 workers with standard quota - good balance of speed and safety",
+      "phase3": {
+        "parallel_capacities": 2,
+        "max_calls_per_hour": 450
+      }
+    },
+    "phase3_faster_parallel": {
+      "_comment": "3 workers with full quota - faster scans when API is available",
+      "phase3": {
+        "parallel_capacities": 3,
+        "max_calls_per_hour": 450
+      }
+    },
+    "phase3_production_first": {
+      "_comment": "Prioritize production capacity, exclude test environments",
+      "phase3": {
+        "parallel_capacities": 2,
+        "max_calls_per_hour": 450,
+        "capacity_priority": ["prod-capacity-id"],
+        "exclude_capacities": ["test-capacity-id", "dev-capacity-id"]
+      }
+    }
+  }
+}

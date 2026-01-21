@@ -6,8 +6,25 @@ requests>=2.31.0
 pandas>=2.0.0
 pyarrow>=14.0.0  # Required for parquet support in pandas
 
-# Optional: PySpark (if you want to test Spark functionality locally)
-# pyspark>=3.4.0
+# Retry logic and resilience (production-critical)
+tenacity>=8.2.0
 
-# Development/Testing
-# python-dotenv  # For loading .env files with credentials
+# Optional: Progress bars (highly recommended for long-running scans)
+tqdm>=4.66.0
+
+# Optional: Configuration file support (YAML format)
+# For JSON config files, PyYAML is not needed
+PyYAML>=6.0.0
+
+# Optional: Environment variable loading from .env files
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# Development tools
+black>=23.0.0  # Code formatting
+flake8>=6.1.0  # Linting
+mypy>=1.7.0    # Type checking

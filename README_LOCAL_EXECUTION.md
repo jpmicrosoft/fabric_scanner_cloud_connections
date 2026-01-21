@@ -23,15 +23,33 @@ pip install -r requirements.txt
 
 ### 3. Configure Authentication
 
-Create a `.env` file (copy from `.env.template`):
+**Option 1: Using .env file (Recommended for local development)**
+
+Rename `.env.template` to `.env` and edit with your credentials:
+
+```bash
+# On Windows/PowerShell
+Copy-Item .env.template .env
+
+# On Linux/Mac
+cp .env.template .env
+```
+
+Then edit `.env` file:
 
 ```bash
 FABRIC_SP_TENANT_ID=your-tenant-id
 FABRIC_SP_CLIENT_ID=your-app-client-id
 FABRIC_SP_CLIENT_SECRET=your-app-secret
+
+# Optional: Upload results to Fabric Lakehouse
+LAKEHOUSE_WORKSPACE_ID=your-workspace-id
+LAKEHOUSE_ID=your-lakehouse-id
 ```
 
-Or set environment variables directly:
+**Note:** The `.env` file is in `.gitignore` so your credentials won't be committed to Git.
+
+**Option 2: Using environment variables (Recommended for production/CI)**
 
 ```powershell
 # PowerShell
@@ -40,7 +58,7 @@ $env:FABRIC_SP_CLIENT_ID = "your-client-id"
 $env:FABRIC_SP_CLIENT_SECRET = "your-secret"
 ```
 
-### 3. Service Principal Setup
+### 4. Service Principal Setup
 
 Your service principal (App Registration) needs:
 
@@ -67,7 +85,41 @@ This will:
 
 ### Run Full Tenant Scan
 
-Edit the `if __name__ == "__main__":` section at the bottom of the script:
+**Option 1: Using CLI (Recommended)**
+
+```bash
+# Sequential scan (most conservative)
+python fabric_scanner_cloud_connections.py --full-scan
+
+# Parallel capacity scanning - Conservative (2 workers, reduced quota)
+python fabric_scanner_cloud_connections.py --full-scan \
+  --parallel-capacities 2 \
+  --max-calls-per-hour 300
+
+# Parallel capacity scanning - Balanced (2 workers, standard quota)
+python fabric_scanner_cloud_connections.py --full-scan \
+  --parallel-capacities 2 \
+  --max-calls-per-hour 450
+
+# Parallel capacity scanning - Faster (3 workers, full quota)
+python fabric_scanner_cloud_connections.py --full-scan \
+  --parallel-capacities 3 \
+  --max-calls-per-hour 450
+
+# With capacity filtering (only scan specific capacities)
+python fabric_scanner_cloud_connections.py --full-scan \
+  --parallel-capacities 2 \
+  --capacity-filter "prod-capacity-id,critical-capacity-id"
+
+# With capacity exclusion (skip test/dev environments)
+python fabric_scanner_cloud_connections.py --full-scan \
+  --parallel-capacities 2 \
+  --exclude-capacities "test-capacity,dev-capacity"
+```
+
+**Option 2: Edit the script directly**
+
+Edit the `if __name__ == "__main__":` section at the bottom of `fabric_scanner_cloud_connections.py`:
 
 ```python
 if __name__ == "__main__":
@@ -88,7 +140,9 @@ run_cloud_connection_scan(
 
 ## Output
 
-When running locally, data is saved to:
+### Local Files (ALWAYS created)
+
+When running locally, data is **always saved** to:
 
 ```
 scanner_output/
@@ -99,6 +153,37 @@ scanner_output/
     ├── tenant_cloud_connections.parquet
     └── tenant_cloud_connections.csv
 ```
+
+### Optional: Upload to Fabric Lakehouse
+
+**In addition to local files**, you can optionally upload results to a Fabric Lakehouse:
+
+1. **Enable upload in script:**
+   ```python
+   UPLOAD_TO_LAKEHOUSE = True
+   ```
+
+2. **Configure lakehouse connection (optional - only if you want to upload):**
+   ```bash
+   # Set environment variables (only needed for lakehouse upload)
+   LAKEHOUSE_WORKSPACE_ID=your-workspace-id
+   LAKEHOUSE_ID=your-lakehouse-id
+   LAKEHOUSE_UPLOAD_PATH=Files/scanner  # Optional, defaults to Files/scanner
+   ```
+
+   **Note:** If you don't set these variables, results will still be saved to `./scanner_output/` - the lakehouse upload will simply be skipped.
+
+3. **Run the script** - Results will be:
+   - `Files/scanner/raw/full/*.json` - Raw scan data
+   - `Files/scanner/raw/incremental/*.json` - Incremental scan data
+   - `Files/scanner/curated/tenant_cloud_connections.parquet` - Curated data (parquet)
+   - `Files/scanner/curated/tenant_cloud_connections.csv` - Curated data (CSV)
+
+**How to find your IDs:**
+- **Workspace ID**: In Fabric, open workspace → URL shows `/groups/{workspace-id}`
+- **Lakehouse ID**: Open lakehouse → URL shows `...&objectId={lakehouse-id}`
+
+Files are uploaded using the Fabric REST API with your service principal credentials.
 
 ## Differences from Fabric Execution
 
@@ -117,6 +202,95 @@ The script automatically detects whether it's running in Fabric or locally:
 - **Locally**: Uses pandas, local filesystem, creates ./scanner_output/
 
 ## Troubleshooting
+
+### Preventing Sleep During Long-Running Scans
+
+**Problem:** For large tenants (>10k workspaces), scans can take hours. If your workstation goes to sleep, the scan will be interrupted.
+
+**Solutions:**
+
+**Option 1: PowerShell Keep-Awake Command (Recommended)**
+
+Run the script with PowerShell's `-NoSleep` equivalent using `Start-Process`:
+
+```powershell
+# Keep system awake during scan
+powercfg /change standby-timeout-ac 0  # Disable sleep on AC power
+powercfg /change standby-timeout-dc 0  # Disable sleep on battery
+
+# Run your scan
+python fabric_scanner_cloud_connections.py --full-scan --enable-checkpoints
+
+# Restore power settings after scan
+powercfg /change standby-timeout-ac 30  # Restore to 30 minutes
+powercfg /change standby-timeout-dc 15  # Restore to 15 minutes
+```
+
+**Option 2: Windows Presentation Mode (Easiest)**
+
+```powershell
+# Enable Presentation Mode (prevents sleep, keeps display on)
+presentationsettings /start
+
+# Run your scan
+python fabric_scanner_cloud_connections.py --full-scan --enable-checkpoints
+
+# Disable Presentation Mode after scan
+presentationsettings /stop
+```
+
+**Option 3: Caffeinate Utility (Third-party)**
+
+Install `caffeinate` for Windows:
+```powershell
+winget install --id=den4b.Shutter -e
+# Or use https://github.com/haimgel/display-switch or similar tools
+```
+
+**Option 4: Change Power Settings Temporarily**
+
+1. **Via GUI:**
+   - Settings → System → Power & Sleep
+   - Set "When plugged in, PC goes to sleep after" → **Never**
+   - Remember to restore after scan!
+
+2. **Via PowerShell:**
+   ```powershell
+   # Save current settings
+   $currentAC = (powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE).Split(":")[-1].Trim()
+   
+   # Disable sleep
+   powercfg /change standby-timeout-ac 0
+   
+   # Run scan
+   python fabric_scanner_cloud_connections.py --full-scan
+   
+   # Restore settings
+   powercfg /change standby-timeout-ac 30
+   ```
+
+**Best Practice: Use Checkpoints**
+
+Even with sleep prevention, enable checkpoints to resume if interrupted:
+
+```powershell
+# If scan is interrupted (sleep, network issue, etc.), simply re-run to resume
+python fabric_scanner_cloud_connections.py --full-scan --enable-checkpoints
+```
+
+Checkpoints save progress every chunk, so you won't lose work if interrupted.
+
+**Alternative: Run in Background/Scheduled Task**
+
+For very large scans, consider running as a scheduled task that runs even when locked:
+
+```powershell
+# Create scheduled task that prevents sleep
+$action = New-ScheduledTaskAction -Execute "python" -Argument "fabric_scanner_cloud_connections.py --full-scan --enable-checkpoints"
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 24)
+Register-ScheduledTask -TaskName "FabricScanner" -Action $action -Trigger $trigger -Settings $settings
+```
 
 ### Import Errors (PySpark/notebookutils)
 

@@ -1,0 +1,175 @@
+# Fabric Scanner Cloud Connections - Configuration File
+# Copy this file to scanner_config.yaml and customize as needed
+# Supports both YAML (.yaml/.yml) and JSON (.json) formats
+#
+# Precedence Order (highest to lowest):
+#   1. CLI parameters (e.g., --max-batches-per-hour 300)
+#   2. Config file settings (this file)
+#   3. Script defaults (hard-coded in .py file)
+#
+# For JSON format, see scanner_config.json.example
+
+# API Settings
+api:
+  # Maximum number of parallel scan operations
+  # For large shared tenants (>100k workspaces), use 1 to avoid rate limits
+  # For smaller tenants, 3-5 provides good balance
+  # Can be overridden by CLI (no direct parameter, use config file or edit script)
+  max_parallel_scans: 1
+  
+  # Poll interval when checking scan status (seconds)
+  poll_interval_seconds: 20
+  
+  # Scan timeout in minutes
+  scan_timeout_minutes: 30
+
+# Checkpoint/Resume Settings
+checkpoint:
+  # Enable checkpoint/resume for long-running scans
+  # Highly recommended for tenants >50k workspaces
+  enabled: true
+  
+  # Storage type for checkpoints
+  # Options: "json" (local files) or "lakehouse" (Fabric storage)
+  storage: json
+  
+  # Save checkpoint every N batches
+  # For 247k workspaces (~2470 batches), checkpoint every 100 batches = ~1 hour
+  interval: 100
+  
+  # Directory for checkpoint files (used when storage=json)
+  directory: checkpoints
+
+# Authentication Settings
+auth:
+  # Authentication mode
+  # Options: "interactive" (user login), "spn" (service principal), "delegated"
+  mode: interactive
+
+# Output Settings
+output:
+  # Default output directory for curated data
+  curated_dir: Files/curated/tenant_cloud_connections
+  
+  # Default SQL table name
+  table_name: tenant_cloud_connections
+
+# Scan Behavior
+scan:
+  # Include personal workspaces in scans
+  include_personal: true
+  
+  # Default lookback period for incremental scans (days)
+  incremental_days_back: 1
+  
+  # Enable hash optimization for incremental scans
+  # Only scans workspaces with actual connection changes
+  enable_hash_optimization: true
+
+# Performance Settings
+performance:
+  # Workspace batch size for Scanner API calls
+  batch_size_workspaces: 100
+  
+  # Max batches per hour in chunked mode (for large shared tenants)
+  # Default 250 is conservative - leaves 50% for other users in shared tenant
+  # Can increase to 400-450 during off-hours if no other users
+  max_batches_per_hour: 250
+
+# Phase 3: Parallel Capacity Scanning (NEW)
+# Scan multiple capacities concurrently to speed up full tenant scans
+phase3:
+  # Number of capacities to scan in parallel
+  # CONSERVATIVE: 1 (sequential, safest for heavily shared tenants)
+  # BALANCED: 2 (2x faster, safe for most tenants)
+  # FASTER: 3 (2.8x faster, requires adequate API quota)
+  # Recommendation: Start with 1 or 2, increase after testing
+  parallel_capacities: 1
+  
+  # Total API calls per hour across ALL parallel workers
+  # CONSERVATIVE: 300 (safe for shared tenants with other users)
+  # BALANCED: 450 (standard quota, works well for 2-3 workers)
+  # FASTER: 450 with fewer workers (faster per-worker speed)
+  # Note: Quota is distributed evenly across workers (e.g., 450/3 = 150 per worker)
+  max_calls_per_hour: 450
+  
+  # Filter: Only scan these capacity IDs (comma-separated, optional)
+  # Leave empty to scan all capacities
+  # Example: ["capacity-id-1", "capacity-id-2"]
+  capacity_filter: []
+  
+  # Exclude: Skip these capacity IDs (comma-separated, optional)
+  # Useful for skipping shared capacities or test environments
+  # Example: ["shared-capacity-id"]
+  exclude_capacities: []
+  
+  # Priority: Scan these capacity IDs first (comma-separated, optional)
+  # Process critical capacities before others
+  # Example: ["production-capacity-id"]
+  capacity_priority: []
+
+# Example Phase 3 configurations for different scenarios:
+#
+# Very Conservative (Sequential - safest for shared tenants):
+#   phase3:
+#     parallel_capacities: 1  # No parallelism
+#     max_calls_per_hour: 450
+#
+# Conservative Parallel (2 workers, reduced quota):
+#   phase3:
+#     parallel_capacities: 2
+#     max_calls_per_hour: 300  # 150 calls/worker
+#
+# Balanced Parallel (2 workers, standard quota):
+#   phase3:
+#     parallel_capacities: 2
+#     max_calls_per_hour: 450  # 225 calls/worker
+#
+# Faster Parallel (3 workers, full quota):
+#   phase3:
+#     parallel_capacities: 3
+#     max_calls_per_hour: 450  # 150 calls/worker
+#
+# Production-First with Filtering:
+#   phase3:
+#     parallel_capacities: 2
+#     max_calls_per_hour: 450
+#     capacity_priority: ["prod-capacity-id"]
+#     exclude_capacities: ["test-capacity-id", "dev-capacity-id"]
+
+# Lakehouse Upload (Local Execution Only)
+# Upload results to Fabric lakehouse when running locally
+lakehouse:
+  # Enable upload to lakehouse
+  upload_enabled: false
+  
+  # Workspace ID containing the lakehouse
+  # Find in workspace URL: https://app.fabric.microsoft.com/groups/{workspace-id}/...
+  workspace_id: ""
+  
+  # Lakehouse ID to upload to
+  # Find in lakehouse settings or URL
+  lakehouse_id: ""
+  
+  # Path within lakehouse to upload files
+  upload_path: Files/scanner
+
+# Debugging
+debug: false
+
+# Example configurations for different scenarios:
+#
+# Small tenant (<1k workspaces):
+#   max_parallel_scans: 5
+#   checkpoint.enabled: false
+#
+# Medium tenant (1k-50k workspaces):
+#   max_parallel_scans: 3
+#   checkpoint.enabled: true
+#   checkpoint.interval: 50
+#
+# Large shared tenant (>100k workspaces):
+#   max_parallel_scans: 1
+#   checkpoint.enabled: true
+#   checkpoint.interval: 100
+#   checkpoint.storage: lakehouse  # More reliable for long runs
