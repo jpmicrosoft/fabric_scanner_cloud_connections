@@ -11,9 +11,16 @@ Usage:
 import sys
 import os
 from pathlib import Path
+from unittest.mock import MagicMock
 
-# Add scanner_api to path
-sys.path.insert(0, str(Path(__file__).parent / "scanner_api"))
+# Add parent directory to path so we can import the main script
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Mock out Fabric-specific modules before importing
+sys.modules['notebookutils'] = MagicMock()
+sys.modules['notebookutils.mssparkutils'] = MagicMock()
+sys.modules['pyspark'] = MagicMock()
+sys.modules['pyspark.sql'] = MagicMock()
 
 # Import the main script functions
 from fabric_scanner_cloud_connections import (
@@ -22,6 +29,11 @@ from fabric_scanner_cloud_connections import (
     flatten_scan_payload,
     _create_row
 )
+import fabric_scanner_cloud_connections as scanner
+
+# Mock authentication globals to prevent real auth attempts
+scanner.HEADERS = {"Authorization": "Bearer mock_token", "Content-Type": "application/json"}
+scanner.ACCESS_TOKEN = "mock_token"
 
 def test_capacity_metadata_extraction():
     """Test that capacity metadata is properly extracted from workspace objects."""

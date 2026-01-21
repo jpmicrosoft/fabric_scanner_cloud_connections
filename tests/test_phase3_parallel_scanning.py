@@ -17,16 +17,30 @@ Usage:
 
 import sys
 import time
+from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, List, Any
 
+# Add parent directory to path so we can import the main script
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Mock out Fabric-specific modules before importing
+sys.modules['notebookutils'] = MagicMock()
+sys.modules['notebookutils.mssparkutils'] = MagicMock()
+sys.modules['pyspark'] = MagicMock()
+sys.modules['pyspark.sql'] = MagicMock()
+
 # Import the scanner module
-sys.path.insert(0, '.')
 from fabric_scanner_cloud_connections import (
     SharedRateLimiter,
     scan_capacities_parallel,
     group_workspaces_by_capacity
 )
+import fabric_scanner_cloud_connections as scanner
+
+# Mock authentication globals to prevent real auth attempts
+scanner.HEADERS = {"Authorization": "Bearer mock_token", "Content-Type": "application/json"}
+scanner.ACCESS_TOKEN = "mock_token"
 
 # Test counters
 tests_passed = 0

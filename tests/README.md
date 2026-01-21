@@ -143,14 +143,24 @@ All tests use **mock objects** instead of making actual API calls to:
 Each test file follows this pattern:
 ```python
 import sys
+from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-# Mock Fabric modules
-sys.modules['notebookutils'] = MagicMock()
-sys.modules['pyspark'] = MagicMock()
+# Add parent directory to sys.path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import scanner
+# Mock Fabric modules before importing scanner
+sys.modules['notebookutils'] = MagicMock()
+sys.modules['notebookutils.mssparkutils'] = MagicMock()
+sys.modules['pyspark'] = MagicMock()
+sys.modules['pyspark.sql'] = MagicMock()
+
+# Import scanner module
 import fabric_scanner_cloud_connections as scanner
+
+# Mock authentication globals to prevent auth attempts
+scanner.HEADERS = {"Authorization": "Bearer mock_token", "Content-Type": "application/json"}
+scanner.ACCESS_TOKEN = "mock_token"
 
 # Test functions
 def test_feature():
@@ -165,7 +175,7 @@ def test_feature():
 ## FAQ
 
 ### Q: Do I need to authenticate to run the tests?
-**A:** No. The tests use mock objects and don't make actual API calls. You'll see authentication messages during module import, but these can be ignored.
+**A:** No. The tests use mock objects and don't make actual API calls. Authentication globals (`HEADERS` and `ACCESS_TOKEN`) are set to mock values in each test file, so no real authentication is attempted.
 
 ### Q: How long do the tests take to run?
 **A:** All 25 tests (across 3 files) complete in **under 5 seconds** since they use mocks instead of real API calls.
@@ -258,16 +268,22 @@ import pdb; pdb.set_trace()
 - ✅ Before releasing to production
 
 ### Q: Can tests be run in CI/CD?
-**A:** Yes! Since they don't require authentication or API access, they're perfect for CI/CD:
+**A:** Yes! Since they don't require authentication or API access, they're perfect for CI/CD. The project includes a GitHub Actions workflow (`.github/workflows/ci-tests.yml`) that automatically runs all tests on Python 3.8-3.12 for every push and pull request.
+
+**Manual CI/CD setup:**
 ```yaml
 # Example GitHub Actions
+- name: Install dependencies
+  run: |
+    pip install -r requirements.txt
+    pip install pytest pytest-mock
+
 - name: Run Tests
   run: |
-    cd tests
-    python test_capacity_metadata.py
-    python test_phase3_parallel_scanning.py
-    python test_core_functions.py
+    pytest tests/ -v
 ```
+
+**See:** [CI Tests Workflow](../.github/workflows/ci-tests.yml) for the complete configuration.
 
 ### Q: What's the coverage of the test suite?
 **A:** Current coverage:

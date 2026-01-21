@@ -4,8 +4,12 @@ Tests for full tenant scan, incremental scan, scan ID retrieval, health check, a
 """
 
 import sys
+from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
+
+# Add parent directory to path so we can import the main script
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Mock out Fabric-specific modules before importing the scanner
 sys.modules['notebookutils'] = MagicMock()
@@ -15,6 +19,10 @@ sys.modules['pyspark.sql'] = MagicMock()
 
 # Import the scanner module
 import fabric_scanner_cloud_connections as scanner
+
+# Mock authentication globals to prevent real auth attempts
+scanner.HEADERS = {"Authorization": "Bearer mock_token", "Content-Type": "application/json"}
+scanner.ACCESS_TOKEN = "mock_token"
 
 def test_health_check():
     """Test 1: Health check - validates API response structure"""
