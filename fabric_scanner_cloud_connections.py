@@ -3742,7 +3742,7 @@ Examples:
                 modified_since = datetime.now(timezone.utc) - timedelta(days=days_back)
                 print(f"Looking back: {days_back} days")
             
-            modified_since_iso = modified_since.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            modified_since_iso = modified_since.strftime("%Y-%m-%dT%H:%M:%SZ")
             enable_hash = not args.no_hash_optimization
             
             print(f"Hash optimization: {'enabled' if enable_hash else 'disabled'}")
