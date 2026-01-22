@@ -14,6 +14,13 @@ from pathlib import Path
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Load .env file for local execution
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load environment variables from .env file
+except ImportError:
+    pass  # python-dotenv not installed, skip
+
 # Progress bars
 try:
     from tqdm import tqdm
