@@ -287,6 +287,10 @@ python fabric_scanner_cloud_connections.py --help
 - `--activity-days N` - Days of activity history to analyze (default: 30)
 - `--output-dir PATH` - Output directory for analysis results
 
+**Configuration & Debug Options:**
+- `--config PATH` - Path to configuration file (YAML or JSON)
+- `--lakehouse-upload-debug` - Show lakehouse upload configuration for debugging
+
 **General Options:**
 - `--no-personal` - Exclude personal workspaces from scan
 - `--table-name NAME` - SQL table name for results (default: tenant_cloud_connections)
@@ -767,6 +771,57 @@ CURATED_DIR = "./scanner_output/curated"       # Parquet + CSV output
 Output files:
 - `scanner_output/curated/tenant_cloud_connections.parquet`
 - `scanner_output/curated/tenant_cloud_connections.csv`
+
+## Understanding API Rate Limits
+
+### What Gets Tracked
+
+The script **tracks API usage locally** (not from Microsoft APIs) to help you avoid hitting limits:
+
+- **Counter**: Increments each time an API call is made to Power BI Admin endpoints
+- **Calculation**: `(total_calls / elapsed_seconds) * 3600 = projected calls/hour`
+- **Warning Thresholds**:
+  - **>450 calls/hour (90%)**: High risk - longer scans may be throttled
+  - **>350 calls/hour (70%)**: Moderate - consider off-peak hours
+  - **<350 calls/hour (70%)**: Healthy - safe to continue
+
+### How Incremental Scans Scale
+
+**Example from real usage:**
+```
+3-hour lookback:  245 workspaces → 13 API calls → 462 calls/hour (92%)
+6-hour lookback:  490 workspaces → 26 API calls → 920 calls/hour (184%) ❌ EXCEEDS LIMIT
+```
+
+**API calls per scan:**
+- `modified_workspace_ids()` - 1 call (same regardless of lookback period)
+- `post_workspace_info()` - 1 call per 100 workspaces
+- `get_scan_status()` - 1 call per batch
+- `get_scan_result()` - 1 call per batch
+
+**Rule of thumb**: ~5-6 API calls per 100 modified workspaces
+
+### Best Practices
+
+**✅ DO:**
+- Run **frequent short scans** (hourly with `--hours 3`) instead of infrequent long ones
+- Use **hash optimization** (enabled by default) - after first scan, it skips unchanged workspaces
+- Check the projected rate after each run - if >400/hour, reduce lookback period
+- Run during **off-peak hours** if scanning frequently
+
+**❌ DON'T:**
+- Run long lookback periods (6+ hours) unless you've verified low workspace activity
+- Ignore the rate warnings - they're calculated from your actual usage pattern
+- Assume the limit is per-user - it's **tenant-wide** and shared with all Scanner API users
+
+### Why the Calculation is Pessimistic
+
+The script calculates rate as if you sustained the same speed for a full hour:
+```
+13 calls in 1.7 minutes = 462 calls/hour (if you kept running for 60 minutes)
+```
+
+This is **intentionally conservative** - better to underestimate capacity than get throttled (429 errors).
 
 ## Notes
 - **API Rate Limits**: 500 requests/hour (tenant-wide), 16 concurrent scans maximum
@@ -1963,15 +2018,51 @@ FROM OPENROWSET(
 ) AS connections;
 ```
 
-**4. Troubleshooting failed uploads:**
+**4. Troubleshooting lakehouse uploads:**
+
+**Check if lakehouse upload is configured:**
 ```powershell
-# Check Service Principal permissions
+# Use the debug flag to see configuration details
+python fabric_scanner_cloud_connections.py --incremental --hours 3 --lakehouse-upload-debug
+```
+
+This will show:
+- Whether lakehouse upload is enabled/disabled
+- Workspace ID and Lakehouse ID being used
+- Upload path configuration
+- Missing configuration values (if any)
+
+**Expected output when properly configured:**
+```
+[DEBUG] Lakehouse upload: ENABLED
+[DEBUG]   Workspace ID: abc123...
+[DEBUG]   Lakehouse ID: def456...
+[DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
+```
+
+**If configuration is missing:**
+```
+[DEBUG] ⚠️  Lakehouse upload configured but missing workspace_id or lakehouse_id
+[DEBUG]   UPLOAD_TO_LAKEHOUSE: True
+[DEBUG]   LAKEHOUSE_WORKSPACE_ID: NOT SET
+[DEBUG]   LAKEHOUSE_ID: NOT SET
+```
+
+**Verify Service Principal permissions:**
+```powershell
 # Need: Workspace Contributor role in target workspace
 
-# Verify IDs are correct
-Write-Host "Workspace ID: $env:LAKEHOUSE_WORKSPACE_ID"
-Write-Host "Lakehouse ID: $env:LAKEHOUSE_ID"
+# Check .env file has correct IDs
+cat .env | Select-String "LAKEHOUSE"
+```
 
-# Test authentication
+**Common issues:**
+- Files uploaded successfully locally but not appearing in lakehouse → Wrong workspace/lakehouse IDs
+- "✅ Uploaded" but files not there → API returning success but not persisting (permissions issue)
+- 404 errors → Directory doesn't exist (should be auto-created with latest code)
+
+**5. Troubleshooting authentication:**
+```powershell
+# Test authentication token
 python -c "from fabric_scanner_cloud_connections import get_token; print('Token:', get_token()[:50])"
 ```

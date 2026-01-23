@@ -203,6 +203,34 @@ The script automatically detects whether it's running in Fabric or locally:
 
 ## Troubleshooting
 
+### Verifying Lakehouse Upload Configuration
+
+If files are saved locally but not appearing in the lakehouse:
+
+```powershell
+# Run with debug flag to see lakehouse configuration
+python fabric_scanner_cloud_connections.py --incremental --hours 3 --lakehouse-upload-debug
+```
+
+**Expected output when properly configured:**
+```
+[DEBUG] Lakehouse upload: ENABLED
+[DEBUG]   Workspace ID: abc123...
+[DEBUG]   Lakehouse ID: def456...
+[DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
+```
+
+**If configuration is missing or incorrect:**
+- Check your `.env` file has `LAKEHOUSE_WORKSPACE_ID` and `LAKEHOUSE_ID`
+- Verify IDs are correct (not placeholder values)
+- Ensure Service Principal has **Workspace Contributor** role in target workspace
+- Check that `UPLOAD_TO_LAKEHOUSE=True` in `.env`
+
+**Common issues:**
+- ✅ "Uploaded to lakehouse" message but files not there → Wrong workspace/lakehouse IDs
+- API returns 200 but files don't persist → Permissions issue
+- 404 errors → Directory path issue (should auto-create with latest code)
+
 ### Preventing Sleep During Long-Running Scans
 
 **Problem:** For large tenants (>10k workspaces), scans can take hours. If your workstation goes to sleep, the scan will be interrupted.

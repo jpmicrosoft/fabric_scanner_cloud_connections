@@ -274,14 +274,16 @@ def print_api_call_stats():
     print(f"\n📊 API Usage Statistics:")
     print(f"   Calls made: {stats['calls']}")
     print(f"   Elapsed time: {stats['elapsed_minutes']:.1f} minutes")
-    print(f"   Current rate: {stats['rate_per_hour']:.0f} calls/hour ({stats['percentage_used']:.1f}% of limit)")
+    print(f"   Projected rate: {stats['rate_per_hour']:.0f} calls/hour ({stats['percentage_used']:.1f}% of 500/hour tenant-wide limit)")
     
     if stats['rate_per_hour'] > 450:
-        print(f"   ⚠️  WARNING: High usage rate - approaching limit!")
+        print(f"   ⚠️  WARNING: Approaching rate limit! Longer lookback periods may be throttled.")
+        print(f"   💡 TIP: Use shorter incremental windows (--hours 3) instead of longer periods (--hours 6+)")
     elif stats['rate_per_hour'] > 350:
-        print(f"   ⚠️  Moderate usage - {500 - stats['rate_per_hour']:.0f} calls/hour available for others")
+        print(f"   ⚠️  Moderate usage - {500 - stats['rate_per_hour']:.0f} calls/hour capacity remaining")
+        print(f"   💡 Consider running during off-peak hours if scanning frequently")
     else:
-        print(f"   ✅ Good - leaving {500 - stats['rate_per_hour']:.0f} calls/hour for other processes")
+        print(f"   ✅ Healthy rate - {500 - stats['rate_per_hour']:.0f} calls/hour available for other users/processes")
 
 # --- Configuration File Loading ---
 
@@ -3676,6 +3678,11 @@ Examples:
         help='Disable checkpoint/resume (overrides config file)'
     )
     config_group.add_argument(
+        '--lakehouse-upload-debug',
+        action='store_true',
+        help='Show lakehouse upload configuration details for debugging'
+    )
+    config_group.add_argument(
         '--checkpoint-storage',
         type=str,
         choices=['json', 'lakehouse'],
@@ -3811,6 +3818,23 @@ Examples:
             
             print(f"Hash optimization: {'enabled' if enable_hash else 'disabled'}")
             print(f"Modified since: {modified_since_iso}")
+            
+            # Show lakehouse upload configuration if debug flag enabled
+            if args.lakehouse_upload_debug:
+                if UPLOAD_TO_LAKEHOUSE:
+                    if LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
+                        print(f"\n[DEBUG] Lakehouse upload: ENABLED")
+                        print(f"[DEBUG]   Workspace ID: {LAKEHOUSE_WORKSPACE_ID}")
+                        print(f"[DEBUG]   Lakehouse ID: {LAKEHOUSE_ID}")
+                        print(f"[DEBUG]   Upload path: {LAKEHOUSE_UPLOAD_PATH}")
+                    else:
+                        print(f"\n[DEBUG] ⚠️  Lakehouse upload configured but missing workspace_id or lakehouse_id")
+                        print(f"[DEBUG]   UPLOAD_TO_LAKEHOUSE: {UPLOAD_TO_LAKEHOUSE}")
+                        print(f"[DEBUG]   LAKEHOUSE_WORKSPACE_ID: {LAKEHOUSE_WORKSPACE_ID or 'NOT SET'}")
+                        print(f"[DEBUG]   LAKEHOUSE_ID: {LAKEHOUSE_ID or 'NOT SET'}")
+                else:
+                    print(f"\n[DEBUG] Lakehouse upload: DISABLED")
+                print()  # Blank line after debug output
             
             incremental_update(
                 modified_since_iso=modified_since_iso,
