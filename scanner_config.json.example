@@ -65,6 +65,7 @@
   },
   
   "debug": false,
+  "_debug_comment": "Enable detailed debug output showing workspace/item/connection processing (can also use --debug flag)",
   
   "_examples": {
     "small_tenant": {

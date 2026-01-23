@@ -264,40 +264,31 @@ The script automatically detects whether it's running in Fabric or locally:
 
 ## Troubleshooting
 
-### Verifying Lakehouse Upload Configuration
+### Enabling Debug Output
 
-If files are saved locally but not appearing in the lakehouse:
+To see detailed processing information during scans:
 
 ```powershell
-# Option 1: Full debug output (includes lakehouse config + detailed API logging)
+# Enable debug output to see:
+#  - Number of workspaces being processed
+#  - Items found in each workspace (with types)
+#  - Datasource/source/activity counts per item
+#  - Total connection rows extracted
 python fabric_scanner_cloud_connections.py --incremental --hours 3 --debug
-
-# Option 2: Just lakehouse configuration (no other debug output)
-python fabric_scanner_cloud_connections.py --incremental --hours 3 --lakehouse-upload-debug
 ```
 
-**Expected output when properly configured:**
+**Expected debug output:**
 ```
-[DEBUG] Lakehouse upload: ENABLED
-[DEBUG]   Workspace ID: abc123...
-[DEBUG]   Lakehouse ID: def456...
-[DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
-[DEBUG]   Upload auth: Main Service Principal (FABRIC_SP_TENANT_ID/CLIENT_ID)
-```
+🔍 DEBUG MODE ENABLED
 
-**If using separate Service Principal for uploads:**
-```
-[DEBUG] Lakehouse upload: ENABLED
-[DEBUG]   Workspace ID: abc123...
-[DEBUG]   Lakehouse ID: def456...
-[DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
-[DEBUG]   Upload auth: Separate Service Principal (UPLOAD_TENANT_ID/CLIENT_ID)
-```
-
-**If using user authentication for uploads:**
-```
-[DEBUG] Lakehouse upload: ENABLED
-[DEBUG]   Workspace ID: abc123...
+[DEBUG] flatten_scan_payload: Processing 174 workspace(s)
+[DEBUG]     Item: 'Sales Report' (type: semanticmodel)
+[DEBUG]       - SemanticModel has 3 datasource(s)
+[DEBUG]     Item: 'ETL Pipeline' (type: pipeline)
+[DEBUG]       - Pipeline has 5 activit(y/ies)
+[DEBUG]     Item: 'Data Refresh' (type: dataflow)
+[DEBUG]       - Dataflow has 2 source(s)
+[DEBUG] flatten_scan_payload: Extracted 42 connection row(s)
 [DEBUG]   Lakehouse ID: def456...
 [DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
 [DEBUG]   Upload auth: Interactive user authentication (UPLOAD_USE_USER_AUTH=true)

@@ -76,6 +76,10 @@ performance:
   # Can increase to 400-450 during off-hours if no other users
   max_batches_per_hour: 250
 
+# Debug Settings
+# Enable detailed debug output showing workspace/item/connection processing
+debug: false
+
 # Phase 3: Parallel Capacity Scanning (NEW)
 # Scan multiple capacities concurrently to speed up full tenant scans
 phase3:

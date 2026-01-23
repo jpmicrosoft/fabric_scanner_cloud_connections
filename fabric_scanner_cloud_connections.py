@@ -4,9 +4,12 @@
 # Auth: Delegated Fabric Admin (default) or Service Principal
 
 import os
+import sys
 import json
 import time
 import threading
+import argparse
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -1834,7 +1837,11 @@ def flatten_scan_payload(payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str
         print(f"Warning: flatten_scan_payload received {type(payload).__name__} instead of dict, skipping")
         return rows
     
-    for ws in (payload.get("workspaces") or []):
+    workspaces = payload.get("workspaces") or []
+    if DEBUG_MODE:
+        print(f"\n[DEBUG] flatten_scan_payload: Processing {len(workspaces)} workspace(s)")
+    
+    for ws in workspaces:
         ws_id   = ws.get("id")
         itemset = ws.get("items") or []
         wmeta   = ws_sidecar.get(ws_id, {"name": ws.get("name") or "", "kind": _lower_or(ws.get("type")), "users": None, "capacity_id": None, "capacity_name": "Shared", "is_dedicated_capacity": False})
@@ -1849,6 +1856,9 @@ def flatten_scan_payload(payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str
             item_id   = item.get("id")
             item_name = item.get("name")
             item_type = _lower_or(item.get("type"))
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG]     Item: '{item_name}' (type: {item_type})")
 
             if item_type in {"semanticmodel", "dataset"}:
                 # Extract item-level metadata
@@ -1856,7 +1866,11 @@ def flatten_scan_payload(payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str
                 item_modified_by = item.get("modifiedBy")
                 item_modified_date = item.get("modifiedDateTime")
                 
-                for ds in (item.get("datasources") or []):
+                datasources = item.get("datasources") or []
+                if DEBUG_MODE:
+                    print(f"[DEBUG]       - SemanticModel has {len(datasources)} datasource(s)")
+                
+                for ds in datasources:
                     conn      = ds.get("connectionDetails") or {}
                     connector = _lower_or(conn.get("datasourceType"))
                     server    = conn.get("server") or conn.get("host")
@@ -1896,6 +1910,9 @@ def flatten_scan_payload(payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str
                 item_modified_date = item.get("modifiedDateTime")
                 
                 sources    = item.get("sources") or item.get("entities") or []
+                if DEBUG_MODE:
+                    print(f"[DEBUG]       - Dataflow has {len(sources)} source(s)")
+                
                 for src in sources:
                     connector = _lower_or(src.get("type") or src.get("provider"))
                     endpoint  = src.get("url") or src.get("path")
@@ -1931,7 +1948,11 @@ def flatten_scan_payload(payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str
                 item_modified_by = item.get("modifiedBy")
                 item_modified_date = item.get("modifiedDateTime")
                 
-                for act in (item.get("activities") or []):
+                activities = item.get("activities") or []
+                if DEBUG_MODE:
+                    print(f"[DEBUG]       - Pipeline has {len(activities)} activit(y/ies)")
+                
+                for act in activities:
                     ref       = act.get("linkedService") or {}
                     connector = _lower_or(ref.get("type") or act.get("type"))
                     endpoint  = ref.get("url") or ref.get("endpoint")
@@ -2028,6 +2049,10 @@ def flatten_scan_payload(payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str
                     "cloud":          True,
                     "generation":     None
                 }))
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] flatten_scan_payload: Extracted {len(rows)} connection row(s)")
+    
     return rows
 
 # --- Capacity Grouping Helper ---
@@ -3750,6 +3775,11 @@ Examples:
         action='store_true',
         help='Overwrite existing data instead of merging'
     )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug mode with detailed logging'
+    )
     
     # Lakehouse upload options (for local execution)
     lakehouse_group = parser.add_argument_group('lakehouse upload options (local execution)')
@@ -3821,6 +3851,12 @@ Examples:
     )
     
     args = parser.parse_args()
+    
+    # Set DEBUG_MODE based on command-line argument
+    global DEBUG_MODE
+    if args.debug:
+        DEBUG_MODE = True
+        print("🔍 DEBUG MODE ENABLED")
     
     # Load configuration file if provided
     if args.config:

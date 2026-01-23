@@ -252,6 +252,9 @@ python fabric_scanner_cloud_connections.py --full-scan \
 # Use configuration file for all settings
 python fabric_scanner_cloud_connections.py --full-scan --large-shared-tenants --config scanner_config.yaml
 
+# Enable debug output to see detailed processing information
+python fabric_scanner_cloud_connections.py --incremental --debug
+
 # Get help and see all options
 python fabric_scanner_cloud_connections.py --help
 ```
@@ -290,8 +293,7 @@ python fabric_scanner_cloud_connections.py --help
 
 **Configuration & Debug Options:**
 - `--config PATH` - Path to configuration file (YAML or JSON)
-- `--debug` - Enable detailed debug output (includes lakehouse upload config)
-- `--lakehouse-upload-debug` - Show only lakehouse upload configuration (without other debug info)
+- `--debug` - Enable detailed debug output (shows workspace processing, item counts, datasources, connections extracted)
 
 **General Options:**
 - `--no-personal` - Exclude personal workspaces from scan
