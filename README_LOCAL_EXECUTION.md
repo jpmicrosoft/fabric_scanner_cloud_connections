@@ -173,7 +173,66 @@ scanner_output/
 
    **Note:** If you don't set these variables, results will still be saved to `./scanner_output/` - the lakehouse upload will simply be skipped.
 
-3. **Run the script** - Results will be:
+3. **Choose authentication approach:**
+
+   **Option A: Single Service Principal (Simple Setup)**
+   ```bash
+   # Use the same Service Principal for both scanning and uploads
+   # Requires: Contributor role in workspace (for write access)
+   FABRIC_SP_TENANT_ID=your-tenant-id
+   FABRIC_SP_CLIENT_ID=your-spn-client-id
+   FABRIC_SP_CLIENT_SECRET=your-spn-secret
+   ```
+
+   **Option B: Separate Service Principal (Recommended - Automated Scans)**
+   ```bash
+   # Main credentials for scanning (Viewer role - read-only)
+   FABRIC_SP_TENANT_ID=your-tenant-id
+   FABRIC_SP_CLIENT_ID=your-scanning-spn-client-id
+   FABRIC_SP_CLIENT_SECRET=your-scanning-spn-secret
+   
+   # Separate credentials for uploads (Contributor role - write access)
+   UPLOAD_TENANT_ID=your-tenant-id
+   UPLOAD_CLIENT_ID=your-upload-spn-client-id
+   UPLOAD_CLIENT_SECRET=your-upload-spn-secret
+   ```
+   
+   **Option C: User Authentication for Uploads (Recommended - Manual Runs)**
+   ```bash
+   # Main credentials for scanning (Viewer role - read-only)
+   FABRIC_SP_TENANT_ID=your-tenant-id
+   FABRIC_SP_CLIENT_ID=your-scanning-spn-client-id
+   FABRIC_SP_CLIENT_SECRET=your-scanning-spn-secret
+   
+   # Use your personal Fabric account for uploads
+   UPLOAD_USE_USER_AUTH=true
+   ```
+   
+   Install required library for user auth:
+   ```powershell
+   pip install msal
+   ```
+   
+   **Benefits of user authentication:**
+   - ✅ Uses your personal Fabric credentials (same as web portal)
+   - ✅ Audit logs show who uploaded files (better accountability)
+   - ✅ No need to create separate Service Principal for uploads
+   - ✅ Browser-based or device code login (works in terminals)
+   - ✅ Token cached to avoid repeated logins during session
+   
+   **Benefits of separate Service Principal:**
+   - ✅ Best for automated/scheduled scans
+   - ✅ No interactive login required
+   - ✅ Works in headless environments
+   
+   **Benefits of both Options B & C:**
+   - ✅ Scanning SPN cannot accidentally modify/delete lakehouse data
+   - ✅ If scanning credentials compromised, attacker cannot write files
+   - ✅ Upload credentials only used when explicitly uploading
+   - ✅ Easier to rotate upload credentials without affecting scans
+   - ✅ Follows security best practice: minimal permissions for read operations
+
+4. **Run the script** - Results will be:
    - `Files/scanner/raw/full/*.json` - Raw scan data
    - `Files/scanner/raw/incremental/*.json` - Incremental scan data
    - `Files/scanner/curated/tenant_cloud_connections.parquet` - Curated data (parquet)
@@ -221,18 +280,52 @@ python fabric_scanner_cloud_connections.py --incremental --hours 3 --lakehouse-u
 [DEBUG]   Workspace ID: abc123...
 [DEBUG]   Lakehouse ID: def456...
 [DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
+[DEBUG]   Upload auth: Main Service Principal (FABRIC_SP_TENANT_ID/CLIENT_ID)
+```
+
+**If using separate Service Principal for uploads:**
+```
+[DEBUG] Lakehouse upload: ENABLED
+[DEBUG]   Workspace ID: abc123...
+[DEBUG]   Lakehouse ID: def456...
+[DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
+[DEBUG]   Upload auth: Separate Service Principal (UPLOAD_TENANT_ID/CLIENT_ID)
+```
+
+**If using user authentication for uploads:**
+```
+[DEBUG] Lakehouse upload: ENABLED
+[DEBUG]   Workspace ID: abc123...
+[DEBUG]   Lakehouse ID: def456...
+[DEBUG]   Upload path: Files/scanner/YOUR_PREFIX
+[DEBUG]   Upload auth: Interactive user authentication (UPLOAD_USE_USER_AUTH=true)
+
+🔐 User authentication required for lakehouse uploads...
+   Opening browser for login (or follow device code instructions)...
+
+To sign in, use a web browser to open the page https://microsoft.com/devicelogin
+and enter the code ABC123DEF to authenticate.
+
+✅ User authentication successful!
 ```
 
 **If configuration is missing or incorrect:**
 - Check your `.env` file has `LAKEHOUSE_WORKSPACE_ID` and `LAKEHOUSE_ID`
 - Verify IDs are correct (not placeholder values)
-- Ensure Service Principal has **Workspace Contributor** role in target workspace
+- **Permissions check**:
+  - **Single SPN**: Requires **Contributor** role in workspace
+  - **Separate credentials**: 
+    - Scanning SPN needs **Viewer** role (or Admin for full scanning)
+    - Upload SPN needs **Contributor** role
 - Check that `UPLOAD_TO_LAKEHOUSE=True` in `.env`
 
 **Common issues:**
 - ✅ "Uploaded to lakehouse" message but files not there → Wrong workspace/lakehouse IDs
-- API returns 200 but files don't persist → Permissions issue
-- 404 errors → Wrong lakehouse ID or workspace ID (Fabric API auto-creates directories)
+- ✅ 404 errors with valid IDs → **Permissions issue** (Viewer role cannot write)
+  - Solution 1: Upgrade to Contributor role
+  - Solution 2: Use separate upload credentials with Contributor role
+- ✅ API returns 200 but files don't persist → Service Principal lacks write permission
+- ⚠️ 404 "EntityNotFound" can mean permissions issue, not literally missing resource (security through obscurity)
 
 ### Preventing Sleep During Long-Running Scans
 

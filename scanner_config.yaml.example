@@ -153,6 +153,22 @@ lakehouse:
   
   # Path within lakehouse to upload files
   upload_path: Files/scanner
+  
+  # Upload Authentication (Optional - for separate write permissions)
+  # Allows principle of least privilege: read-only SPN for scanning, write-capable auth for uploads
+  # NOTE: These settings override environment variables (UPLOAD_USE_USER_AUTH, UPLOAD_TENANT_ID, etc.)
+  
+  # Option A: Use interactive user authentication for uploads (requires: pip install msal)
+  # Best for: Manual scans where you want individual user accountability
+  upload_use_user_auth: false
+  
+  # Option B: Use separate Service Principal for uploads
+  # Best for: Automated/scheduled scans with separate read/write credentials
+  # If upload_tenant_id, upload_client_id, upload_client_secret are all set, uses upload SPN
+  # If not set, falls back to main credentials (FABRIC_SP_* from environment variables)
+  upload_tenant_id: ""        # Optional - defaults to main tenant if using user auth
+  upload_client_id: ""        # Optional - defaults to Power BI app ID if using user auth
+  upload_client_secret: ""    # Required if using upload SPN (Option B)
 
 # Debugging
 debug: false
@@ -173,3 +189,19 @@ debug: false
 #   checkpoint.enabled: true
 #   checkpoint.interval: 100
 #   checkpoint.storage: lakehouse  # More reliable for long runs
+#
+# Lakehouse upload with user authentication (manual runs):
+#   lakehouse:
+#     upload_enabled: true
+#     workspace_id: "your-workspace-id"
+#     lakehouse_id: "your-lakehouse-id"
+#     upload_use_user_auth: true  # Uses your personal credentials
+#
+# Lakehouse upload with separate SPN (automated runs):
+#   lakehouse:
+#     upload_enabled: true
+#     workspace_id: "your-workspace-id"
+#     lakehouse_id: "your-lakehouse-id"
+#     upload_tenant_id: "your-tenant-id"
+#     upload_client_id: "your-upload-spn-client-id"
+#     upload_client_secret: "your-upload-spn-secret"

@@ -29,6 +29,14 @@ except ImportError:
     TQDM_AVAILABLE = False
     tqdm = None
 
+# MSAL for user authentication (optional)
+try:
+    from msal import PublicClientApplication
+    MSAL_AVAILABLE = True
+except ImportError:
+    MSAL_AVAILABLE = False
+    PublicClientApplication = None
+
 # Config file support (YAML)
 try:
     import yaml
@@ -99,6 +107,14 @@ LAKEHOUSE_WORKSPACE_ID = os.getenv("LAKEHOUSE_WORKSPACE_ID", "")  # Workspace ID
 LAKEHOUSE_ID = os.getenv("LAKEHOUSE_ID", "")  # Lakehouse ID to upload to
 LAKEHOUSE_UPLOAD_PATH = "Files/scanner"  # Path within lakehouse to upload files
 
+# --- Upload Authentication (Optional - for separate write permissions) ---
+# If set, uses separate credentials for lakehouse uploads (allows read-only scanning SPN + write-capable upload SPN/user)
+# If not set, falls back to main FABRIC_SP_* credentials
+UPLOAD_TENANT_ID = os.getenv("UPLOAD_TENANT_ID", "")  # Tenant ID for upload authentication (optional)
+UPLOAD_CLIENT_ID = os.getenv("UPLOAD_CLIENT_ID", "")  # Client ID for upload SPN (optional)
+UPLOAD_CLIENT_SECRET = os.getenv("UPLOAD_CLIENT_SECRET", "")  # Client secret for upload SPN (optional)
+UPLOAD_USE_USER_AUTH = os.getenv("UPLOAD_USE_USER_AUTH", "").lower() == "true"  # Use interactive user auth for uploads (optional)
+
 # --- Activity Event Analysis (Inbound Connection Detection) ---
 ENABLE_ACTIVITY_ANALYSIS = False  # Set to True to analyze inbound connections via Activity Event API
 ACTIVITY_DAYS_BACK = 30  # Number of days of activity events to analyze
@@ -107,6 +123,7 @@ ACTIVITY_DAYS_BACK = 30  # Number of days of activity events to analyze
 TENANT_ID      = os.getenv("FABRIC_SP_TENANT_ID", "<YOUR_TENANT_ID>")
 CLIENT_ID      = os.getenv("FABRIC_SP_CLIENT_ID", "<YOUR_APP_CLIENT_ID>")
 CLIENT_SECRET  = os.getenv("FABRIC_SP_CLIENT_SECRET", "<YOUR_APP_CLIENT_SECRET>")
+
 
 AUTH_URL       = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
 FABRIC_SCOPE   = "https://analysis.windows.net/powerbi/api/.default"
@@ -496,6 +513,97 @@ def get_access_token_spn() -> str:
     r.raise_for_status()
     return r.json().get("access_token")
 
+# Token cache for user authentication to avoid repeated logins
+_upload_user_token_cache = {"token": None, "expires_at": 0}
+
+def get_upload_token() -> str:
+    """
+    Get access token for lakehouse uploads.
+    
+    Supports three authentication methods (in priority order):
+    1. Interactive user authentication (if UPLOAD_USE_USER_AUTH=true)
+    2. Upload Service Principal (if UPLOAD_TENANT_ID, UPLOAD_CLIENT_ID, UPLOAD_CLIENT_SECRET set)
+    3. Main Service Principal credentials (fallback)
+    
+    This allows for principle of least privilege:
+    - Main credentials can be Viewer (read-only) for scanning workspaces
+    - Upload credentials can be Contributor (write) for lakehouse file uploads
+    - User auth provides individual user accountability
+    
+    Returns:
+        Access token for Fabric API with write permissions
+    """
+    # Option 1: Interactive user authentication
+    if UPLOAD_USE_USER_AUTH:
+        if not MSAL_AVAILABLE:
+            print("⚠️  UPLOAD_USE_USER_AUTH=true but msal library not installed.")
+            print("   Install with: pip install msal")
+            print("   Falling back to Service Principal authentication.")
+        else:
+            # Check if cached token is still valid (with 5 min buffer)
+            if _upload_user_token_cache["token"] and time.time() < (_upload_user_token_cache["expires_at"] - 300):
+                return _upload_user_token_cache["token"]
+            
+            # Use tenant ID from upload config or main config
+            tenant_id = UPLOAD_TENANT_ID if UPLOAD_TENANT_ID else TENANT_ID
+            
+            # Use client ID from upload config or default Power BI client ID
+            # Default Power BI client ID allows delegated auth without app registration
+            client_id = UPLOAD_CLIENT_ID if UPLOAD_CLIENT_ID else "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+            
+            authority = f"https://login.microsoftonline.com/{tenant_id}"
+            app = PublicClientApplication(client_id=client_id, authority=authority)
+            
+            # Try to get token silently first (from cache)
+            accounts = app.get_accounts()
+            if accounts:
+                result = app.acquire_token_silent([FABRIC_SCOPE], account=accounts[0])
+                if result and "access_token" in result:
+                    # Cache the token
+                    _upload_user_token_cache["token"] = result["access_token"]
+                    _upload_user_token_cache["expires_at"] = time.time() + result.get("expires_in", 3600)
+                    return result["access_token"]
+            
+            # Interactive login required
+            print("\n🔐 User authentication required for lakehouse uploads...")
+            print("   Opening browser for login (or follow device code instructions)...\n")
+            
+            # Try device code flow (works better in terminals/remote sessions)
+            flow = app.initiate_device_flow(scopes=[FABRIC_SCOPE])
+            if "user_code" not in flow:
+                raise ValueError(f"Failed to create device flow: {flow.get('error_description')}")
+            
+            print(flow["message"])
+            result = app.acquire_token_by_device_flow(flow)
+            
+            if "access_token" in result:
+                print("✅ User authentication successful!\n")
+                # Cache the token
+                _upload_user_token_cache["token"] = result["access_token"]
+                _upload_user_token_cache["expires_at"] = time.time() + result.get("expires_in", 3600)
+                return result["access_token"]
+            else:
+                error = result.get("error_description", result.get("error", "Unknown error"))
+                print(f"⚠️  User authentication failed: {error}")
+                print("   Falling back to Service Principal authentication.\n")
+    
+    # Option 2: Upload Service Principal credentials
+    if UPLOAD_TENANT_ID and UPLOAD_CLIENT_ID and UPLOAD_CLIENT_SECRET:
+        upload_auth_url = f"https://login.microsoftonline.com/{UPLOAD_TENANT_ID}/oauth2/v2.0/token"
+        data = {
+            "client_id": UPLOAD_CLIENT_ID,
+            "client_secret": UPLOAD_CLIENT_SECRET,
+            "scope": FABRIC_SCOPE,
+            "grant_type": "client_credentials",
+        }
+        r = requests.post(upload_auth_url, data=data)
+        r.raise_for_status()
+        return r.json().get("access_token")
+    
+    # Option 3: Fall back to main credentials
+    return ACCESS_TOKEN
+
+
 
 # Cache for created lakehouse directories to avoid redundant API calls
 _created_lakehouse_dirs = set()
@@ -558,6 +666,11 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
     """
     Upload a file from local filesystem to Fabric Lakehouse using REST API.
     
+    Uses upload-specific credentials if configured (UPLOAD_TENANT_ID, UPLOAD_CLIENT_ID, UPLOAD_CLIENT_SECRET),
+    otherwise falls back to main credentials. This allows principle of least privilege:
+    - Main credentials: Viewer (read-only) for scanning
+    - Upload credentials: Contributor (write) for file uploads
+    
     Args:
         local_file_path: Local file path to upload
         lakehouse_path: Path within lakehouse (e.g., 'Files/scanner/raw/file.json')
@@ -585,8 +698,11 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         # we'll retry with explicit path parameter
         url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{lakehouse_path}"
         
+        # Get token for uploads (uses upload credentials if configured, otherwise main credentials)
+        upload_token = get_upload_token()
+        
         headers = {
-            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Authorization": f"Bearer {upload_token}",
             "Content-Type": "application/octet-stream"
         }
         
@@ -3840,6 +3956,16 @@ Examples:
                         print(f"[DEBUG]   Workspace ID: {LAKEHOUSE_WORKSPACE_ID}")
                         print(f"[DEBUG]   Lakehouse ID: {LAKEHOUSE_ID}")
                         print(f"[DEBUG]   Upload path: {LAKEHOUSE_UPLOAD_PATH}")
+                        
+                        # Show authentication method
+                        if UPLOAD_USE_USER_AUTH:
+                            print(f"[DEBUG]   Upload auth: Interactive user authentication (UPLOAD_USE_USER_AUTH=true)")
+                            if not MSAL_AVAILABLE:
+                                print(f"[DEBUG]   ⚠️  WARNING: msal library not installed - will fall back to SPN auth")
+                        elif UPLOAD_TENANT_ID and UPLOAD_CLIENT_ID and UPLOAD_CLIENT_SECRET:
+                            print(f"[DEBUG]   Upload auth: Separate Service Principal (UPLOAD_TENANT_ID/CLIENT_ID)")
+                        else:
+                            print(f"[DEBUG]   Upload auth: Main Service Principal (FABRIC_SP_TENANT_ID/CLIENT_ID)")
                     else:
                         print(f"\n[DEBUG] ⚠️  Lakehouse upload configured but missing workspace_id or lakehouse_id")
                         print(f"[DEBUG]   UPLOAD_TO_LAKEHOUSE: {UPLOAD_TO_LAKEHOUSE}")

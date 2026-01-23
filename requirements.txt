@@ -19,6 +19,10 @@ PyYAML>=6.0.0
 # Optional: Environment variable loading from .env files
 python-dotenv>=1.0.0
 
+# Optional: User authentication for lakehouse uploads (UPLOAD_USE_USER_AUTH=true)
+# Only needed if using interactive user auth instead of Service Principal for uploads
+msal>=1.24.0
+
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0

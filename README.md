@@ -1538,9 +1538,58 @@ A: Grant **minimum required permissions** only:
 2. Enable: **"Allow service principals to use Fabric APIs"**
 3. Security group: Limit to specific SPN if possible (not "Entire organization")
 
-**Workspace-level permissions (for lakehouse upload):**
-- Role: **Contributor** (for upload)
-- Alternative: **Viewer** (for read-only scans)
+**Workspace-level permissions:**
+
+**Option 1: Single Service Principal (Simple)**
+- Role: **Contributor** (required for both scanning and lakehouse uploads)
+- Use when: You want simple setup and don't need separation of concerns
+
+**Option 2: Separate Service Principal Credentials (Recommended - Principle of Least Privilege)**
+- **Scanning SPN**: **Viewer** role (read-only for workspace scanning)
+- **Upload SPN**: **Contributor** role (write access for lakehouse file uploads)
+- Use when: You want to follow security best practices for automated/scheduled scans
+- Configure via:
+  ```bash
+  # Main credentials (for scanning) - Viewer role
+  FABRIC_SP_TENANT_ID=your-tenant-id
+  FABRIC_SP_CLIENT_ID=your-scanning-spn-client-id
+  FABRIC_SP_CLIENT_SECRET=your-scanning-spn-secret
+  
+  # Upload credentials (for lakehouse writes) - Contributor role
+  UPLOAD_TENANT_ID=your-tenant-id
+  UPLOAD_CLIENT_ID=your-upload-spn-client-id
+  UPLOAD_CLIENT_SECRET=your-upload-spn-secret
+  ```
+
+**Option 3: User Authentication for Uploads (Recommended - Manual Runs)**
+- **Scanning SPN**: **Viewer** role (read-only for workspace scanning)
+- **Upload User**: **Contributor** role (your personal account with write access)
+- Use when: Running scans manually and want individual user accountability
+- Requires: `pip install msal`
+- Configure via:
+  ```bash
+  # Main credentials (for scanning) - Viewer role
+  FABRIC_SP_TENANT_ID=your-tenant-id
+  FABRIC_SP_CLIENT_ID=your-scanning-spn-client-id
+  FABRIC_SP_CLIENT_SECRET=your-scanning-spn-secret
+  
+  # Use interactive user auth for uploads
+  UPLOAD_USE_USER_AUTH=true
+  UPLOAD_TENANT_ID=your-tenant-id  # Optional, defaults to main tenant
+  ```
+- **Benefits**:
+  - Uses your personal Fabric credentials (same as web portal)
+  - Audit logs show who uploaded files (better accountability)
+  - No need to create separate Service Principal for uploads
+  - Browser-based or device code authentication (works in terminals)
+  - Token cached to avoid repeated logins during session
+
+**Benefits of separate credentials (Options 2 & 3):**
+- ✅ Scanning SPN cannot accidentally modify/delete data
+- ✅ If scanning credentials compromised, attacker cannot write to lakehouse
+- ✅ Upload credentials only used when explicitly uploading files
+- ✅ Easier to rotate upload credentials without affecting scanning operations
+- ✅ User auth provides audit trail of who performed uploads
 
 **Audit regularly:**
 ```powershell
