@@ -495,6 +495,57 @@ def get_access_token_spn() -> str:
     return r.json().get("access_token")
 
 
+# Cache for created lakehouse directories to avoid redundant API calls
+_created_lakehouse_dirs = set()
+
+def ensure_lakehouse_directory(directory_path: str, workspace_id: str, lakehouse_id: str) -> bool:
+    """
+    Ensure a directory exists in the Fabric lakehouse by uploading a placeholder file.
+    
+    Args:
+        directory_path: Directory path in lakehouse (e.g., 'Files/scanner/raw/incremental')
+        workspace_id: Fabric workspace ID
+        lakehouse_id: Lakehouse ID
+    
+    Returns:
+        True if directory was created or already exists, False on error
+    """
+    # Check cache first to avoid redundant API calls
+    cache_key = f"{workspace_id}/{lakehouse_id}/{directory_path}"
+    if cache_key in _created_lakehouse_dirs:
+        return True
+    
+    try:
+        # Upload a tiny placeholder file to create the directory structure
+        # Fabric automatically creates parent directories when uploading files
+        placeholder_path = f"{directory_path}/.placeholder"
+        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{placeholder_path}"
+        
+        headers = {
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/octet-stream"
+        }
+        
+        # Upload empty file to create directory
+        response = requests.put(url, headers=headers, data=b"")
+        
+        if response.status_code in [200, 201]:
+            _created_lakehouse_dirs.add(cache_key)
+            return True
+        elif response.status_code == 409:  # Conflict - directory already exists
+            _created_lakehouse_dirs.add(cache_key)
+            return True
+        else:
+            if DEBUG_MODE:
+                print(f"   Directory creation response ({response.status_code}): {response.text}")
+            return False
+            
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"   Directory creation error: {e}")
+        return False
+
+
 def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, workspace_id: str, lakehouse_id: str) -> bool:
     """
     Upload a file from local filesystem to Fabric Lakehouse using REST API.
@@ -513,12 +564,20 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         return False
     
     try:
+        # Ensure parent directory exists
+        path_parts = lakehouse_path.rsplit('/', 1)
+        if len(path_parts) > 1:
+            directory_path = path_parts[0]
+            ensure_lakehouse_directory(directory_path, workspace_id, lakehouse_id)
+        
         # Read file content
         with open(local_file_path, 'rb') as f:
             file_content = f.read()
         
         # Fabric Files API endpoint
-        # Format: /v1/workspaces/{workspaceId}/items/{lakehouseId}/files/{path}
+        # Format: /v1/workspaces/{workspaceId}/lakehouses/{lakehouseId}/files/{path}
+        # Note: The API should auto-create parent directories, but if it fails with 404,
+        # we'll retry with explicit path parameter
         url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{lakehouse_path}"
         
         headers = {
