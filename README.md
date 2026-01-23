@@ -171,8 +171,9 @@ LAKEHOUSE_UPLOAD_PATH = "Files/scanner"  # Path within lakehouse (optional, defa
 ### For Fabric Notebook Execution
 1. In the Fabric **Admin Portal** enable Admin API settings for metadata scanning (and optionally DAX/Mashup) so the Scanner API returns rich datasource details.
 2. Choose authentication:
-   - **Delegated Fabric Admin** (default): set `USE_DELEGATED = True`. Run inside Fabric notebooks.
-   - **Service Principal (SPN)** for automation: set `USE_DELEGATED = False` and provide `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`.
+   - **Service Principal (SPN)** (recommended for automation): set `AUTH_MODE = "spn"` (default) and provide `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`.
+   - **Delegated Fabric Admin**: set `AUTH_MODE = "delegated"`. Run inside Fabric notebooks.
+   - **Interactive User**: set `AUTH_MODE = "interactive"` for ad-hoc testing with personal credentials.
 3. Ensure you have **Fabric Administrator** or **Power BI Administrator** role for Scanner API access.
 
 ### For Local Execution

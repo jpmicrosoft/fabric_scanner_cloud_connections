@@ -19,8 +19,8 @@
   },
   
   "auth": {
-    "_comment": "Authentication mode: interactive, spn, or delegated",
-    "mode": "interactive"
+    "_comment": "Authentication mode: spn (recommended), interactive, or delegated",
+    "mode": "spn"
   },
   
   "output": {

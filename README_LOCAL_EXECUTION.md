@@ -23,7 +23,9 @@ pip install -r requirements.txt
 
 ### 3. Configure Authentication
 
-**Option 1: Using .env file (Recommended for local development)**
+**Service Principal authentication is used by default** (recommended for automation and production).
+
+**Setup: Using .env file (Recommended for local development)**
 
 Rename `.env.template` to `.env` and edit with your credentials:
 
@@ -49,7 +51,7 @@ LAKEHOUSE_ID=your-lakehouse-id
 
 **Note:** The `.env` file is in `.gitignore` so your credentials won't be committed to Git.
 
-**Option 2: Using environment variables (Recommended for production/CI)**
+**Alternative: Using environment variables (For production/CI)**
 
 ```powershell
 # PowerShell

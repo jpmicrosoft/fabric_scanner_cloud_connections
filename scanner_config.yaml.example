@@ -43,8 +43,8 @@ checkpoint:
 # Authentication Settings
 auth:
   # Authentication mode
-  # Options: "interactive" (user login), "spn" (service principal), "delegated"
-  mode: interactive
+  # Options: "spn" (service principal - recommended), "interactive" (user login), "delegated"
+  mode: spn
 
 # Output Settings
 output:

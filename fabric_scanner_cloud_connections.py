@@ -89,7 +89,7 @@ CONFIG_FILE = os.getenv("SCANNER_CONFIG_FILE", "scanner_config.yaml")  # Path to
 #   "spn"         -> Service Principal (app registration with client secret)
 #   "delegated"   -> Delegated/User auth in Fabric (uses mssparkutils)
 #   "interactive" -> Interactive user login (Azure CLI or browser)
-AUTH_MODE = "interactive"  # Change to "spn" for service principal
+AUTH_MODE = "spn"  # Default: Service Principal (recommended for automation)
 
 # --- Checkpoint/Resume Configuration ---
 ENABLE_CHECKPOINTING = True  # Set to True to enable checkpoint/resume for large scans
