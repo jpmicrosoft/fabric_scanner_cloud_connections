@@ -1444,9 +1444,10 @@ def get_activity_events(days_back: int = 30, activity_filter: str = None) -> Lis
     while current_date < end_date:
         window_end = min(current_date + timedelta(days=1), end_date)
         
+        # Format timestamps to match Microsoft's example with 7 decimal places
         params = {
-            "startDateTime": current_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "endDateTime": window_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+            "startDateTime": current_date.strftime("%Y-%m-%dT%H:%M:%S.0000000Z"),
+            "endDateTime": window_end.strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
         }
         
         continuation_token = None
@@ -3742,7 +3743,8 @@ Examples:
                 modified_since = datetime.now(timezone.utc) - timedelta(days=days_back)
                 print(f"Looking back: {days_back} days")
             
-            modified_since_iso = modified_since.strftime("%Y-%m-%dT%H:%M:%SZ")
+            # Format timestamp to match Microsoft's example: 2020-10-02T05:51:30.0000000Z (7 decimal places)
+            modified_since_iso = modified_since.strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
             enable_hash = not args.no_hash_optimization
             
             print(f"Hash optimization: {'enabled' if enable_hash else 'disabled'}")
