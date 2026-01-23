@@ -1431,7 +1431,7 @@ def run_one_batch(batch_meta: List[Dict[str, Any]]) -> Dict[str, Any]:
         if UPLOAD_TO_LAKEHOUSE and LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
             upload_to_fabric_lakehouse(
                 str(local_raw_path),
-                f"{LAKEHOUSE_UPLOAD_PATH}/raw/full/{scan_id}.json",
+                f"{LAKEHOUSE_UPLOAD_PATH}/{scan_id}.json",
                 LAKEHOUSE_WORKSPACE_ID,
                 LAKEHOUSE_ID
             )
@@ -2707,7 +2707,7 @@ def run_one_batch_incremental(batch_meta: List[Dict[str, Any]]) -> Dict[str, Any
         if UPLOAD_TO_LAKEHOUSE and LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
             upload_to_fabric_lakehouse(
                 str(local_raw_path),
-                f"{LAKEHOUSE_UPLOAD_PATH}/raw/incremental/{scan_id}.json",
+                f"{LAKEHOUSE_UPLOAD_PATH}/{scan_id}.json",
                 LAKEHOUSE_WORKSPACE_ID,
                 LAKEHOUSE_ID
             )
