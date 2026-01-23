@@ -634,8 +634,11 @@ def ensure_lakehouse_directory(directory_path: str, workspace_id: str, lakehouse
         placeholder_path = f"{directory_path}/.placeholder"
         url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{placeholder_path}"
         
+        # Use upload token (not main token) for write permissions
+        upload_token = get_upload_token()
+        
         headers = {
-            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Authorization": f"Bearer {upload_token}",
             "Content-Type": "application/octet-stream"
         }
         
