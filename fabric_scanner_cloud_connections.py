@@ -3775,11 +3775,6 @@ Examples:
         action='store_true',
         help='Overwrite existing data instead of merging'
     )
-    parser.add_argument(
-        '--debug',
-        action='store_true',
-        help='Enable debug mode with detailed logging'
-    )
     
     # Lakehouse upload options (for local execution)
     lakehouse_group = parser.add_argument_group('lakehouse upload options (local execution)')
