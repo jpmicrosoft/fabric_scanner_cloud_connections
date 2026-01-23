@@ -2525,11 +2525,14 @@ def incremental_update(modified_since_iso: str,
         print(f"No modified workspaces since {modified_since_iso}. Nothing to update.")
         return
 
-    print(f"Found {len(changed_ws)} modified workspaces since {modified_since_iso} (include_personal={include_personal}).")
+    # Extract workspace IDs from the workspace dictionaries
+    changed_ws_ids = [ws.get("id") for ws in changed_ws if ws.get("id")]
+    
+    print(f"Found {len(changed_ws_ids)} modified workspaces since {modified_since_iso} (include_personal={include_personal}).")
     
     # Smart filtering: Use stored hash tracker to skip workspaces with recent scans
-    workspaces_to_scan = changed_ws
-    if enable_hash_optimization and len(changed_ws) > 5:
+    workspaces_to_scan = changed_ws_ids
+    if enable_hash_optimization and len(changed_ws_ids) > 5:
         print(f"\n🔍 Using hash-based optimization to reduce API calls...")
         try:
             hash_tracker = ConnectionHashTracker(
@@ -2553,7 +2556,7 @@ def incremental_update(modified_since_iso: str,
             workspaces_to_scan = []
             skipped_recently_scanned = 0
             
-            for ws_id in changed_ws:
+            for ws_id in changed_ws_ids:
                 # Check if workspace has stored hash
                 if ws_id in stored_hashes:
                     last_scan = stored_hashes[ws_id].get('last_scan_time')
@@ -2570,7 +2573,7 @@ def incremental_update(modified_since_iso: str,
                 # Include workspace in scan
                 workspaces_to_scan.append(ws_id)
             
-            reduction_pct = (skipped_recently_scanned / len(changed_ws) * 100) if changed_ws else 0
+            reduction_pct = (skipped_recently_scanned / len(changed_ws_ids) * 100) if changed_ws_ids else 0
             
             print(f"✅ Hash optimization complete (no API calls used):")
             print(f"   Skipped {skipped_recently_scanned} workspaces scanned within last 24 hours")
@@ -2578,8 +2581,8 @@ def incremental_update(modified_since_iso: str,
             
         except Exception as e:
             print(f"⚠️  Hash optimization failed: {e}")
-            print(f"   Falling back to scanning all {len(changed_ws)} workspaces")
-            workspaces_to_scan = changed_ws
+            print(f"   Falling back to scanning all {len(changed_ws_ids)} workspaces")
+            workspaces_to_scan = changed_ws_ids
     
     if not workspaces_to_scan:
         print(f"✅ All workspaces scanned recently. No processing needed.")
