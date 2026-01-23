@@ -3852,8 +3852,10 @@ Examples:
     
     args = parser.parse_args()
     
-    # Set DEBUG_MODE based on command-line argument
+    # Declare global variables that will be modified
     global DEBUG_MODE
+    
+    # Set DEBUG_MODE based on command-line argument
     if args.debug:
         DEBUG_MODE = True
         print("🔍 DEBUG MODE ENABLED")
@@ -3883,11 +3885,6 @@ Examples:
         enable_checkpointing_override = False
     
     checkpoint_storage_override = args.checkpoint_storage
-    
-    # Override DEBUG_MODE from command line
-    global DEBUG_MODE
-    if args.debug:
-        DEBUG_MODE = True
     
     # Override lakehouse upload settings from command line
     global UPLOAD_TO_LAKEHOUSE, LAKEHOUSE_WORKSPACE_ID, LAKEHOUSE_ID, LAKEHOUSE_UPLOAD_PATH
