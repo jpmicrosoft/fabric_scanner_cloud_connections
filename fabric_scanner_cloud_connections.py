@@ -698,6 +698,9 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         # Fabric Files API endpoint
         url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{lakehouse_path}"
         
+        if DEBUG_MODE:
+            print(f"   [DEBUG] Upload URL: {url}")
+        
         # Get token for uploads (uses upload credentials if configured, otherwise main credentials)
         upload_token = get_upload_token()
         
