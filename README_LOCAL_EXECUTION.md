@@ -208,7 +208,10 @@ The script automatically detects whether it's running in Fabric or locally:
 If files are saved locally but not appearing in the lakehouse:
 
 ```powershell
-# Run with debug flag to see lakehouse configuration
+# Option 1: Full debug output (includes lakehouse config + detailed API logging)
+python fabric_scanner_cloud_connections.py --incremental --hours 3 --debug
+
+# Option 2: Just lakehouse configuration (no other debug output)
 python fabric_scanner_cloud_connections.py --incremental --hours 3 --lakehouse-upload-debug
 ```
 

@@ -289,7 +289,8 @@ python fabric_scanner_cloud_connections.py --help
 
 **Configuration & Debug Options:**
 - `--config PATH` - Path to configuration file (YAML or JSON)
-- `--lakehouse-upload-debug` - Show lakehouse upload configuration for debugging
+- `--debug` - Enable detailed debug output (includes lakehouse upload config)
+- `--lakehouse-upload-debug` - Show only lakehouse upload configuration (without other debug info)
 
 **General Options:**
 - `--no-personal` - Exclude personal workspaces from scan
@@ -2022,7 +2023,10 @@ FROM OPENROWSET(
 
 **Check if lakehouse upload is configured:**
 ```powershell
-# Use the debug flag to see configuration details
+# Option 1: Full debug output (includes lakehouse config + detailed logging)
+python fabric_scanner_cloud_connections.py --incremental --hours 3 --debug
+
+# Option 2: Just lakehouse configuration (no other debug output)
 python fabric_scanner_cloud_connections.py --incremental --hours 3 --lakehouse-upload-debug
 ```
 

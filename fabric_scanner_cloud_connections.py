@@ -531,6 +531,12 @@ def ensure_lakehouse_directory(directory_path: str, workspace_id: str, lakehouse
         # Upload empty file to create directory
         response = requests.put(url, headers=headers, data=b"")
         
+        if DEBUG_MODE:
+            print(f"   [DEBUG] Directory creation: {directory_path}")
+            print(f"   [DEBUG] Response: {response.status_code}")
+            if response.status_code not in [200, 201, 409]:
+                print(f"   [DEBUG] Error: {response.text}")
+        
         if response.status_code in [200, 201]:
             _created_lakehouse_dirs.add(cache_key)
             return True
@@ -3819,8 +3825,8 @@ Examples:
             print(f"Hash optimization: {'enabled' if enable_hash else 'disabled'}")
             print(f"Modified since: {modified_since_iso}")
             
-            # Show lakehouse upload configuration if debug flag enabled
-            if args.lakehouse_upload_debug:
+            # Show lakehouse upload configuration if debug flag enabled (--debug includes this automatically)
+            if args.lakehouse_upload_debug or args.debug:
                 if UPLOAD_TO_LAKEHOUSE:
                     if LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
                         print(f"\n[DEBUG] Lakehouse upload: ENABLED")
