@@ -3689,6 +3689,11 @@ Examples:
         help='Show lakehouse upload configuration details for debugging'
     )
     config_group.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable detailed debug output (includes lakehouse config and API responses)'
+    )
+    config_group.add_argument(
         '--checkpoint-storage',
         type=str,
         choices=['json', 'lakehouse'],
