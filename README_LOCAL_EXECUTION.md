@@ -232,7 +232,7 @@ python fabric_scanner_cloud_connections.py --incremental --hours 3 --lakehouse-u
 **Common issues:**
 - ✅ "Uploaded to lakehouse" message but files not there → Wrong workspace/lakehouse IDs
 - API returns 200 but files don't persist → Permissions issue
-- 404 errors → Directory path issue (should auto-create with latest code)
+- 404 errors → Wrong lakehouse ID or workspace ID (Fabric API auto-creates directories)
 
 ### Preventing Sleep During Long-Running Scans
 

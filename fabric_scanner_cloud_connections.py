@@ -572,11 +572,8 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         return False
     
     try:
-        # Ensure parent directory exists
-        path_parts = lakehouse_path.rsplit('/', 1)
-        if len(path_parts) > 1:
-            directory_path = path_parts[0]
-            ensure_lakehouse_directory(directory_path, workspace_id, lakehouse_id)
+        # Note: Fabric Files API automatically creates parent directories when uploading files
+        # No need for explicit directory creation
         
         # Read file content
         with open(local_file_path, 'rb') as f:

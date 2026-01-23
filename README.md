@@ -2063,7 +2063,7 @@ cat .env | Select-String "LAKEHOUSE"
 **Common issues:**
 - Files uploaded successfully locally but not appearing in lakehouse → Wrong workspace/lakehouse IDs
 - "✅ Uploaded" but files not there → API returning success but not persisting (permissions issue)
-- 404 errors → Directory doesn't exist (should be auto-created with latest code)
+- 404 errors → Wrong lakehouse ID or workspace ID (Fabric API auto-creates directories during file upload)
 
 **5. Troubleshooting authentication:**
 ```powershell
