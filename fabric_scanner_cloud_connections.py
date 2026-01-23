@@ -695,8 +695,13 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         with open(local_file_path, 'rb') as f:
             file_content = f.read()
         
+        # Strip "Files/" prefix if present (API endpoint already includes /Files/)
+        clean_path = lakehouse_path
+        if clean_path.startswith("Files/"):
+            clean_path = clean_path[6:]  # Remove "Files/" prefix
+        
         # Fabric Files API endpoint
-        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{lakehouse_path}"
+        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/Files/{clean_path}"
         
         if DEBUG_MODE:
             print(f"   [DEBUG] Upload URL: {url}")
