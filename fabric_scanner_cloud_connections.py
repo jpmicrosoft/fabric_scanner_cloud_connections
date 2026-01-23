@@ -1445,8 +1445,8 @@ def get_activity_events(days_back: int = 30, activity_filter: str = None) -> Lis
         window_end = min(current_date + timedelta(days=1), end_date)
         
         params = {
-            "startDateTime": current_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-            "endDateTime": window_end.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            "startDateTime": current_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "endDateTime": window_end.strftime("%Y-%m-%dT%H:%M:%SZ")
         }
         
         continuation_token = None
