@@ -3735,6 +3735,11 @@ Examples:
     
     checkpoint_storage_override = args.checkpoint_storage
     
+    # Override DEBUG_MODE from command line
+    global DEBUG_MODE
+    if args.debug:
+        DEBUG_MODE = True
+    
     # Override lakehouse upload settings from command line
     global UPLOAD_TO_LAKEHOUSE, LAKEHOUSE_WORKSPACE_ID, LAKEHOUSE_ID, LAKEHOUSE_UPLOAD_PATH
     if args.upload_to_lakehouse:
