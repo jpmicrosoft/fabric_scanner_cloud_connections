@@ -688,17 +688,11 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         return False
     
     try:
-        # Note: Fabric Files API automatically creates parent directories when uploading files
-        # No need for explicit directory creation
-        
         # Read file content
         with open(local_file_path, 'rb') as f:
             file_content = f.read()
         
         # Fabric Files API endpoint
-        # Format: /v1/workspaces/{workspaceId}/lakehouses/{lakehouseId}/files/{path}
-        # Note: The API should auto-create parent directories, but if it fails with 404,
-        # we'll retry with explicit path parameter
         url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{lakehouse_path}"
         
         # Get token for uploads (uses upload credentials if configured, otherwise main credentials)
@@ -715,6 +709,33 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         if response.status_code in [200, 201]:
             print(f"✅ Uploaded to lakehouse: {lakehouse_path}")
             return True
+        elif response.status_code == 404:
+            # Directory doesn't exist - create it and retry
+            print(f"   Directory not found, creating parent directories...")
+            
+            # Extract directory path from file path (e.g., 'Files/scanner/raw/incremental' from 'Files/scanner/raw/incremental/file.json')
+            directory_path = '/'.join(lakehouse_path.rsplit('/', 1)[:-1]) if '/' in lakehouse_path else ''
+            
+            if directory_path:
+                # Create directory structure
+                if ensure_lakehouse_directory(directory_path, workspace_id, lakehouse_id):
+                    # Retry upload
+                    response = requests.put(url, headers=headers, data=file_content)
+                    
+                    if response.status_code in [200, 201]:
+                        print(f"✅ Uploaded to lakehouse: {lakehouse_path}")
+                        return True
+                    else:
+                        print(f"⚠️  Upload retry failed ({response.status_code}): {lakehouse_path}")
+                        if DEBUG_MODE:
+                            print(f"   Response: {response.text}")
+                        return False
+                else:
+                    print(f"⚠️  Failed to create directory structure for: {lakehouse_path}")
+                    return False
+            else:
+                print(f"⚠️  No directory path to create for: {lakehouse_path}")
+                return False
         else:
             print(f"⚠️  Upload failed ({response.status_code}): {lakehouse_path}")
             if DEBUG_MODE:
