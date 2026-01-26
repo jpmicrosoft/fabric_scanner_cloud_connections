@@ -505,7 +505,22 @@ class CheckpointManager:
                     print(f"⚠️  Failed to clear checkpoint: {e}")
 
 # --- Auth ---
+
+# Token cache for main Scanner API authentication
+_scanner_token_cache = {"token": None, "expires_at": 0, "auth_mode": None}
+
+# Token cache for user authentication to avoid repeated logins
+_upload_user_token_cache = {"token": None, "expires_at": 0}
+
 def get_access_token_spn() -> str:
+    """Get Service Principal access token with caching and auto-refresh."""
+    global _scanner_token_cache
+    
+    # Check if cached token is still valid (with 5 min buffer)
+    if _scanner_token_cache["token"] and time.time() < (_scanner_token_cache["expires_at"] - 300):
+        return _scanner_token_cache["token"]
+    
+    # Token expired or not cached, get new one
     data = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
@@ -514,10 +529,14 @@ def get_access_token_spn() -> str:
     }
     r = requests.post(AUTH_URL, data=data)
     r.raise_for_status()
-    return r.json().get("access_token")
-
-# Token cache for user authentication to avoid repeated logins
-_upload_user_token_cache = {"token": None, "expires_at": 0}
+    token_response = r.json()
+    
+    # Cache the token with expiration (default 1 hour = 3600 seconds)
+    _scanner_token_cache["token"] = token_response.get("access_token")
+    _scanner_token_cache["expires_at"] = time.time() + token_response.get("expires_in", 3600)
+    _scanner_token_cache["auth_mode"] = "spn"
+    
+    return _scanner_token_cache["token"]
 
 def get_upload_token() -> str:
     """
@@ -739,9 +758,15 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
 
 def get_access_token_interactive() -> str:
     """
-    Get access token using interactive user authentication.
+    Get access token using interactive user authentication with caching.
     Tries Azure CLI first, falls back to browser-based login.
     """
+    global _scanner_token_cache
+    
+    # Check if cached token is still valid (with 5 min buffer)
+    if _scanner_token_cache["token"] and _scanner_token_cache["auth_mode"] == "interactive" and time.time() < (_scanner_token_cache["expires_at"] - 300):
+        return _scanner_token_cache["token"]
+    
     try:
         # Try importing azure-identity (install with: pip install azure-identity)
         from azure.identity import AzureCliCredential, InteractiveBrowserCredential
@@ -752,6 +777,12 @@ def get_access_token_interactive() -> str:
             credential = AzureCliCredential()
             token = credential.get_token("https://analysis.windows.net/powerbi/api/.default")
             print("✅ Authenticated via Azure CLI")
+            
+            # Cache the token
+            _scanner_token_cache["token"] = token.token
+            _scanner_token_cache["expires_at"] = token.expires_on
+            _scanner_token_cache["auth_mode"] = "interactive"
+            
             return token.token
         except Exception as cli_error:
             print(f"Azure CLI not available: {cli_error}")
@@ -763,6 +794,12 @@ def get_access_token_interactive() -> str:
             )
             token = credential.get_token("https://analysis.windows.net/powerbi/api/.default")
             print("✅ Authenticated via browser login")
+            
+            # Cache the token
+            _scanner_token_cache["token"] = token.token
+            _scanner_token_cache["expires_at"] = token.expires_on
+            _scanner_token_cache["auth_mode"] = "interactive"
+            
             return token.token
             
     except ImportError:
@@ -775,9 +812,33 @@ def get_access_token_interactive() -> str:
 HEADERS = None
 ACCESS_TOKEN = None
 
+def refresh_access_token():
+    """Refresh the access token if needed. Returns True if token was refreshed."""
+    global HEADERS, ACCESS_TOKEN, _scanner_token_cache
+    
+    # For delegated mode in Fabric, always get fresh token (Fabric manages caching)
+    if AUTH_MODE == "delegated":
+        if RUNNING_IN_FABRIC and mssparkutils is not None:
+            ACCESS_TOKEN = mssparkutils.credentials.getToken("powerbi")
+            HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+            return True
+        return False
+    
+    # Check if token needs refresh (within 5 min of expiry)
+    if _scanner_token_cache["token"] and time.time() >= (_scanner_token_cache["expires_at"] - 300):
+        if AUTH_MODE == "spn":
+            ACCESS_TOKEN = get_access_token_spn()
+        elif AUTH_MODE == "interactive":
+            ACCESS_TOKEN = get_access_token_interactive()
+        
+        HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+        return True
+    
+    return False
+
 def initialize_authentication():
     """Initialize authentication based on AUTH_MODE. Call this before making API requests."""
-    global HEADERS, ACCESS_TOKEN, AUTH_MODE
+    global HEADERS, ACCESS_TOKEN, AUTH_MODE, _scanner_token_cache
     
     if AUTH_MODE == "delegated":
         if not RUNNING_IN_FABRIC:
@@ -787,6 +848,7 @@ def initialize_authentication():
             print("Using Fabric delegated authentication...")
             ACCESS_TOKEN = mssparkutils.credentials.getToken("powerbi")
             HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+            # Note: Delegated mode doesn't use cache as Fabric manages token lifecycle
             return
 
     if AUTH_MODE == "interactive":
@@ -1090,11 +1152,26 @@ class ConnectionHashTracker:
 
 
 def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
+    # Auto-refresh token if close to expiry
+    refresh_access_token()
+    
     url = f"{PBI_ADMIN_BASE}/workspaces/modified"
     params = {"excludePersonalWorkspaces": str(not include_personal).lower()}
     _track_api_call()  # Track API usage
-    r = requests.get(url, headers=HEADERS, params=params)
-    r.raise_for_status()
+    
+    try:
+        r = requests.get(url, headers=HEADERS, params=params)
+        r.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            # Token expired, refresh and retry
+            print("⚠️  Token expired, refreshing authentication...")
+            refresh_access_token()
+            r = requests.get(url, headers=HEADERS, params=params)
+            r.raise_for_status()
+        else:
+            raise
+    
     payload = r.json() or {}
     
     # Handle different response structures
@@ -1110,14 +1187,29 @@ def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
 
 
 def modified_workspace_ids(modified_since_iso: str, include_personal: bool = True) -> List[Dict[str, Any]]:
+    # Auto-refresh token if close to expiry
+    refresh_access_token()
+    
     url = f"{PBI_ADMIN_BASE}/workspaces/modified"
     params = {
         "modifiedSince": modified_since_iso,
         "excludePersonalWorkspaces": str(not include_personal).lower(),
     }
     _track_api_call()  # Track API usage
-    r = requests.get(url, headers=HEADERS, params=params)
-    r.raise_for_status()
+    
+    try:
+        r = requests.get(url, headers=HEADERS, params=params)
+        r.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            # Token expired, refresh and retry
+            print("⚠️  Token expired, refreshing authentication...")
+            refresh_access_token()
+            r = requests.get(url, headers=HEADERS, params=params)
+            r.raise_for_status()
+        else:
+            raise
+    
     payload = r.json() or {}
     
     # Handle different response structures
@@ -1135,6 +1227,10 @@ def modified_workspace_ids(modified_since_iso: str, include_personal: bool = Tru
 def post_workspace_info(workspace_ids: List[str], max_retries: int = 3) -> str:
     if not workspace_ids:
         raise ValueError("workspace_ids cannot be empty.")
+    
+    # Auto-refresh token if close to expiry
+    refresh_access_token()
+    
     url = f"{PBI_ADMIN_BASE}/workspaces/getInfo"
     body = {
         "workspaces": workspace_ids,
@@ -1167,7 +1263,12 @@ def post_workspace_info(workspace_ids: List[str], max_retries: int = 3) -> str:
             return scan_id
             
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429:  # Rate limit exceeded
+            if e.response.status_code == 401:
+                # Token expired, refresh and retry
+                print("⚠️  Token expired, refreshing authentication...")
+                refresh_access_token()
+                continue  # Retry with new token
+            elif e.response.status_code == 429:  # Rate limit exceeded
                 retry_after = int(e.response.headers.get('Retry-After', 60))  # Default to 60 seconds
                 print(f"⚠️ Rate limit exceeded (429). Waiting {retry_after} seconds before retry {attempt + 1}/{max_retries}...")
                 if attempt < max_retries - 1:
@@ -1184,6 +1285,9 @@ def poll_scan_status(scan_id: str) -> None:
     url = f"{PBI_ADMIN_BASE}/workspaces/scanStatus/{scan_id}"
     start = time.time()
     while True:
+        # Auto-refresh token if close to expiry
+        refresh_access_token()
+        
         try:
             _track_api_call()  # Track API usage
             r = requests.get(url, headers=HEADERS)
@@ -1204,7 +1308,12 @@ def poll_scan_status(scan_id: str) -> None:
                 raise TimeoutError(f"Scan {scan_id} timed out after {SCAN_TIMEOUT_MINUTES} minutes.")
             time.sleep(POLL_INTERVAL_SECONDS)
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429:
+            if e.response.status_code == 401:
+                # Token expired, refresh and retry
+                print("⚠️  Token expired, refreshing authentication...")
+                refresh_access_token()
+                continue  # Retry with new token
+            elif e.response.status_code == 429:
                 retry_after = int(e.response.headers.get('Retry-After', 60))
                 print(f"⚠️  Rate limit hit while polling scan status. Cooling down for {retry_after} seconds...")
                 print(f"   This won't count against the timeout. Scan will continue after cooldown.")
@@ -1216,7 +1325,10 @@ def poll_scan_status(scan_id: str) -> None:
 def read_scan_result(scan_id: str) -> Dict[str, Any]:
     url = f"{PBI_ADMIN_BASE}/workspaces/scanResult/{scan_id}"
     
-    # Retry logic for 429 rate limit errors
+    # Auto-refresh token if close to expiry
+    refresh_access_token()
+    
+    # Retry logic for 429 rate limit and 401 authentication errors
     max_retries = 5
     base_wait = 60
     
@@ -1228,7 +1340,12 @@ def read_scan_result(scan_id: str) -> Dict[str, Any]:
             
             return r.json()
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429:
+            if e.response.status_code == 401:
+                # Token expired, refresh and retry
+                print("⚠️  Token expired, refreshing authentication...")
+                refresh_access_token()
+                continue  # Retry with new token
+            elif e.response.status_code == 429:
                 if attempt < max_retries - 1:
                     retry_after = int(e.response.headers.get('Retry-After', base_wait * (2 ** attempt)))
                     print(f"⚠️  Rate limit hit reading results. Cooling down for {retry_after} seconds...")
@@ -3168,9 +3285,12 @@ def check_scanner_api_health(
     print("Optimized for shared tenants - minimal API impact")
     print()
     
-    token = get_token()
+    # Use existing authentication infrastructure
+    if not HEADERS:
+        initialize_authentication()
+    
     base_url = f"https://api.powerbi.com/v1.0/myorg"
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = HEADERS
     
     # Calculate interval between test calls
     interval_seconds = (test_duration_minutes * 60) / test_calls

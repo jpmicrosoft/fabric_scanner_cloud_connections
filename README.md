@@ -52,7 +52,21 @@ The script automatically detects its environment and adapts accordingly.
 ### 1. Full Tenant Scan
 Scans all workspaces in your Fabric tenant using the Scanner API to create a baseline inventory.
 
-### 2. Full Tenant Scan (Large Shared Tenants Mode)
+### 2. Automatic Token Refresh (NEW)
+**For long-running scans**: Automatically manages authentication tokens to prevent failures during extended scans.
+- **Token caching**: Caches tokens with 5-minute expiry buffer
+- **Auto-refresh**: Proactively refreshes tokens before expiration
+- **401 error handling**: Automatically recovers from expired tokens
+- **Multi-hour support**: Enables scans lasting 165+ hours (full tenant with MAX_PARALLEL_SCANS=1)
+- **Zero downtime**: Seamless token rotation without interrupting scans
+- **All auth modes**: Works with Service Principal, interactive, and delegated authentication
+
+**Benefits:**
+- Run unattended overnight/weekend scans without manual intervention
+- Supports very large tenants (247K+ workspaces = ~7 days continuous scanning)
+- No authentication failures during long-running incremental scans
+
+### 3. Full Tenant Scan (Large Shared Tenants Mode)
 **For large shared tenants (10K+ workspaces)**: Automatically manages rate limits by processing workspaces in hourly chunks.
 - **Rate limit safe**: Respects 500 API calls/hour limit
 - **Automatic pausing**: Waits between chunks to avoid 429 errors
@@ -66,7 +80,7 @@ Scans all workspaces in your Fabric tenant using the Scanner API to create a bas
 python fabric_scanner_cloud_connections.py --full-scan --large-shared-tenants
 ```
 
-### 3. Parallel Capacity Scanning (Phase 3 - NEW)
+### 4. Parallel Capacity Scanning (Phase 3 - NEW)
 **Speed up full tenant scans** by scanning multiple capacities concurrently with thread-safe rate limiting:
 - **2-3x faster**: Reduce scan time from hours to minutes depending on capacity distribution
 - **Thread-safe**: Distributed quota management ensures no API limit violations
@@ -127,18 +141,18 @@ python fabric_scanner_cloud_connections.py --full-scan \
 - ✅ **Use Balanced Parallel** (`--parallel-capacities 2 --max-calls-per-hour 450`): Most tenants, good speed/safety balance
 - ✅ **Use Faster Parallel** (`--parallel-capacities 3 --max-calls-per-hour 450`): Dedicated tenants or off-hours scanning
 
-### 4. Incremental Scan
+### 5. Incremental Scan
 Scans only workspaces modified since a specific timestamp for efficient updates.
 - **Flexible time windows**: Specify lookback period in hours or days
 - **Sub-hour precision**: Support for fractional hours (e.g., 0.5 = 30 minutes)
 
-### 5. Scan ID Retrieval
+### 6. Scan ID Retrieval
 Retrieves results from a previous scan using the WorkspaceInfo GetScanResult API.
 - **Use scan IDs** from previous scans without re-scanning
 - **24-hour window**: Works with scans completed within the last 24 hours
 - **Includes personal workspaces**: Gets all workspaces from the original scan
 
-### 6. JSON Directory Scan
+### 7. JSON Directory Scan
 Scans all JSON files in a lakehouse directory (e.g., previously saved scanner API responses) and extracts cloud connection information.
 - **Single file mode**: Process one specific JSON file for debugging/testing
 - **Batch mode**: Process all JSON files in a directory
@@ -316,6 +330,138 @@ python fabric_scanner_cloud_connections.py --help
 - `--lakehouse-workspace-id WORKSPACE_ID` - Workspace ID containing the target lakehouse (required if uploading)
 - `--lakehouse-id LAKEHOUSE_ID` - Lakehouse ID to upload results to (required if uploading)
 - `--lakehouse-upload-path PATH` - Path within lakehouse to upload files (default: Files/scanner)
+
+### Running from Fabric Notebook
+
+To run this scanner from a Microsoft Fabric notebook, follow these steps:
+
+#### 1. **Upload the Script to Your Lakehouse**
+   - Open your Fabric workspace
+   - Navigate to your Lakehouse
+   - Upload `fabric_scanner_cloud_connections.py` to the **Files** section (e.g., `Files/scripts/`)
+
+#### 2. **Configure Authentication Mode**
+
+   Open the script and set the authentication mode to **delegated** (recommended for Fabric):
+
+   ```python
+   # Near line 95 in the script
+   AUTH_MODE = "delegated"  # Change from "spn" to "delegated"
+   ```
+
+   **Authentication Options:**
+   - `"delegated"` - Uses your Fabric Admin credentials (recommended for notebooks)
+   - `"spn"` - Service Principal (requires TENANT_ID, CLIENT_ID, CLIENT_SECRET)
+   - `"interactive"` - Interactive browser login (not recommended for notebooks)
+
+#### 3. **Create a New Notebook Cell**
+
+   In your Fabric notebook, create a cell with the following code:
+
+   ```python
+   # Load the scanner script
+   %run Files/scripts/fabric_scanner_cloud_connections
+   ```
+
+#### 4. **Run a Scan**
+
+   In a new cell, choose your scan mode:
+
+   **Full Tenant Scan:**
+   ```python
+   # Scan all workspaces
+   run_full_scan_v1()
+   ```
+
+   **Incremental Scan (Last 24 Hours):**
+   ```python
+   # Scan workspaces modified in last 24 hours
+   run_incremental_scan(hours_back=24)
+   ```
+
+   **Incremental Scan (Last 7 Days):**
+   ```python
+   # Scan workspaces modified in last 7 days
+   run_incremental_scan(days_back=7)
+   ```
+
+   **Get Results from Previous Scan:**
+   ```python
+   # Retrieve results using a scan ID
+   get_scan_result_by_id(scan_id="your-scan-id-here")
+   ```
+
+#### 5. **Access Results**
+
+   Results are automatically saved to your Lakehouse:
+
+   **SQL Table:**
+   ```sql
+   SELECT * FROM tenant_cloud_connections
+   WHERE connector IN ('azuresqldatabase', 'synapse', 'snowflake')
+   ORDER BY workspace_name
+   ```
+
+   **Raw Files:**
+   - Location: `Files/scanner/raw/`
+   - Format: JSON files with scan results
+   - Naming: `scan_result_YYYYMMDD_HHMMSS.json`
+
+   **Curated Data:**
+   - Location: `Tables/dbo/tenant_cloud_connections`
+   - Format: Delta table (Parquet)
+   - Access: Via SQL endpoint or Spark
+
+#### Key Differences from Local Execution
+
+| Aspect | Fabric Notebook | Local Execution |
+|--------|----------------|-----------------|
+| **Data Engine** | PySpark (Spark DataFrames) | pandas (DataFrames) |
+| **Storage** | Lakehouse Tables (`Tables/dbo/`) | Local files (`./scanner_output/`) |
+| **Raw Files** | `Files/scanner/raw/` in Lakehouse | `./scanner_output/raw/` locally |
+| **Authentication** | Delegated (default) or SPN | SPN (required) or Interactive |
+| **Dependencies** | Auto-available (PySpark, mssparkutils) | Manual install (`requirements.txt`) |
+| **SQL Access** | ✅ Yes (via SQL endpoint) | ❌ No (file-based only) |
+
+#### Example: Complete Notebook Workflow
+
+```python
+# Cell 1: Load the script
+%run Files/scripts/fabric_scanner_cloud_connections
+
+# Cell 2: Run incremental scan (last 24 hours)
+run_incremental_scan(hours_back=24)
+
+# Cell 3: Query results
+%%sql
+SELECT 
+    workspace_name,
+    connector,
+    server,
+    database,
+    COUNT(*) as connection_count
+FROM tenant_cloud_connections
+GROUP BY workspace_name, connector, server, database
+ORDER BY connection_count DESC
+LIMIT 20
+```
+
+#### Troubleshooting
+
+**Issue: "Module not found" errors**
+- **Solution**: Fabric notebooks include PySpark, mssparkutils, and common libraries by default. No installation needed.
+
+**Issue: "Authentication failed" errors**
+- **Solution**: Ensure you have **Fabric Administrator** or **Power BI Administrator** role
+- Verify `AUTH_MODE = "delegated"` is set in the script
+
+**Issue: "Table not found" errors**
+- **Solution**: First run a scan (full or incremental) to create the table
+- Check that the lakehouse is attached to your notebook
+
+**Issue: Rate limit (429) errors**
+- **Solution**: Scanner automatically handles rate limits with exponential backoff
+- For large tenants, use `--large-shared-tenants` mode (if using CLI) or reduce `MAX_PARALLEL_SCANS`
 
 ### Configuration File (NEW)
 
