@@ -12,6 +12,7 @@ import time
 import threading
 import argparse
 import hashlib
+import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -1151,6 +1152,177 @@ class ConnectionHashTracker:
             print(f"   Warning: Could not save hashes: {e}")
 
 # --- Scanner API helpers ---
+
+
+def read_workspaces_from_table(table_name: str, include_personal: bool = True) -> List[Dict[str, Any]]:
+    """
+    Read workspace list from lakehouse table or local parquet file.
+    
+    Args:
+        table_name: Name of the table/file containing workspace data
+        include_personal: Whether to include personal workspaces
+    
+    Returns:
+        List of workspace dictionaries with 'id' and optionally 'name', 'type', 'capacityId'
+    
+    Expected table schema:
+        - workspace_id (required): Workspace GUID
+        - workspace_name (optional): Workspace display name
+        - workspace_type (optional): Workspace type
+        - capacity_id (optional): Capacity ID
+    """
+    workspaces = []
+    
+    # Validate table name is not empty
+    if not table_name or not table_name.strip():
+        raise ValueError("Table name cannot be empty")
+    
+    try:
+        if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
+            # Read from Spark table
+            if DEBUG_MODE:
+                print(f"[DEBUG] read_workspaces_from_table: Reading from Spark table '{table_name}'")
+                print(f"[DEBUG] include_personal={include_personal}")
+            
+            # Validate table name to prevent SQL injection (allow only alphanumeric, underscore, dot)
+            if not re.match(r'^[a-zA-Z0-9_\.]+$', table_name):
+                raise ValueError(f"Invalid table name '{table_name}'. Only alphanumeric characters, underscores, and dots are allowed.")
+            
+            print(f"📊 Reading workspace list from table: {table_name}")
+            df = spark.sql(f"SELECT * FROM {table_name}")
+            if DEBUG_MODE:
+                print(f"[DEBUG] Table row count before filtering: {df.count()}")
+            
+            # Validate required column exists
+            if "workspace_id" not in df.columns:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Required column 'workspace_id' not found in Spark table. Available: {df.columns}")
+                raise ValueError(f"Required column 'workspace_id' not found in table '{table_name}'")
+            
+            # Filter out null workspace_ids
+            rows_before = df.count() if DEBUG_MODE else 0
+            df = df.filter(F.col("workspace_id").isNotNull())
+            if DEBUG_MODE:
+                rows_after = df.count()
+                if rows_before != rows_after:
+                    print(f"[DEBUG] Filtered out {rows_before - rows_after} rows with null workspace_id")
+            
+            # Filter personal workspaces if needed
+            if not include_personal:
+                if DEBUG_MODE:
+                    print("[DEBUG] Filtering out PersonalGroup workspaces")
+                df = df.filter(F.col("workspace_type") != "PersonalGroup")
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Table row count after filtering: {df.count()}")
+            
+            # Convert to list of dicts
+            for row in df.collect():
+                ws_dict = {"id": row.workspace_id}
+                if hasattr(row, "workspace_name"):
+                    ws_dict["name"] = row.workspace_name
+                if hasattr(row, "workspace_type"):
+                    ws_dict["type"] = row.workspace_type
+                if hasattr(row, "capacity_id"):
+                    ws_dict["capacityId"] = row.capacity_id
+                workspaces.append(ws_dict)
+            
+            if not workspaces:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Table '{table_name}' returned 0 workspaces after conversion")
+                print(f"⚠️  Table '{table_name}' exists but contains no workspaces")
+                print("   Falling back to API call...")
+                return None
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries")
+                print(f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}")
+            print(f"✅ Successfully loaded {len(workspaces)} workspaces from table '{table_name}'")
+        
+        else:
+            # Read from local parquet file
+            if DEBUG_MODE:
+                print(f"[DEBUG] read_workspaces_from_table: Running in local mode")
+                print(f"[DEBUG] PANDAS_AVAILABLE={PANDAS_AVAILABLE}")
+            
+            if not PANDAS_AVAILABLE:
+                raise ImportError("pandas is required to read local parquet files. Install with: pip install pandas")
+            
+            from pathlib import Path
+            
+            # Try different file paths
+            possible_paths = [
+                Path(CURATED_DIR) / f"{table_name}.parquet",
+                Path(table_name),
+                Path(f"{table_name}.parquet")
+            ]
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] Searching for parquet file in paths:")
+                for p in possible_paths:
+                    print(f"[DEBUG]   - {p.absolute()} (exists: {p.exists()})")
+            
+            df = None
+            for path in possible_paths:
+                if path.exists():
+                    print(f"📊 Reading workspace list from: {path}")
+                    df = pd.read_parquet(path)
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] Loaded parquet file: {len(df)} rows, columns: {list(df.columns)}")
+                    break
+            
+            if df is None:
+                if DEBUG_MODE:
+                    print("[DEBUG] No parquet file found at any search path")
+                raise FileNotFoundError(f"Could not find workspace table at any of: {possible_paths}")
+            
+            # Filter personal workspaces if needed
+            if not include_personal and "workspace_type" in df.columns:
+                rows_before = len(df)
+                df = df[df["workspace_type"] != "PersonalGroup"]
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Filtered PersonalGroup: {rows_before} -> {len(df)} rows")
+            
+            # Validate required column exists
+            if "workspace_id" not in df.columns:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Required column 'workspace_id' not found. Available: {list(df.columns)}")
+                raise ValueError("Required column 'workspace_id' not found in parquet file")
+            
+            # Filter out null workspace_ids
+            rows_before = len(df)
+            df = df[df["workspace_id"].notna()]
+            if DEBUG_MODE and rows_before != len(df):
+                print(f"[DEBUG] Filtered out {rows_before - len(df)} rows with null workspace_id")
+            
+            # Convert to list of dicts
+            for _, row in df.iterrows():
+                ws_dict = {"id": row["workspace_id"]}
+                if "workspace_name" in df.columns:
+                    ws_dict["name"] = row["workspace_name"]
+                if "workspace_type" in df.columns:
+                    ws_dict["type"] = row["workspace_type"]
+                if "capacity_id" in df.columns:
+                    ws_dict["capacityId"] = row["capacity_id"]
+                workspaces.append(ws_dict)
+            
+            if not workspaces:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Parquet file returned 0 workspaces after conversion")
+                print(f"⚠️  File contains no workspaces")
+                print("   Falling back to API call...")
+                return None
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries")
+                print(f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}")
+            print(f"✅ Successfully loaded {len(workspaces)} workspaces from file")
+    
+    except Exception as e:
+        print(f"❌ Error reading workspace table '{table_name}': {e}")
+        print("   Falling back to API call...")
+        return None
+    
+    return workspaces
 
 
 def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
@@ -2418,7 +2590,8 @@ def full_tenant_scan(include_personal: bool = True,
                      max_calls_per_hour: int = 450,
                      capacity_filter: List[str] = None,
                      exclude_capacities: List[str] = None,
-                     capacity_priority: List[str] = None) -> None:
+                     capacity_priority: List[str] = None,
+                     workspace_table_source: str = None) -> None:
     """
     Full tenant scan with optional capacity grouping and parallel scanning.
     
@@ -2432,8 +2605,25 @@ def full_tenant_scan(include_personal: bool = True,
         capacity_filter: Only scan these capacity IDs (e.g., ['cap-123', 'cap-456'])
         exclude_capacities: Skip these capacity IDs (e.g., ['shared'])
         capacity_priority: Process capacities in this order (rest follow)
+        workspace_table_source: Read workspace list from table instead of API (optional)
     """
-    ws_min = get_all_workspaces(include_personal=include_personal)
+    # Get workspace list from table or API
+    if workspace_table_source:
+        if DEBUG_MODE:
+            print(f"[DEBUG] full_tenant_scan: Using workspace table source '{workspace_table_source}'")
+        ws_min = read_workspaces_from_table(workspace_table_source, include_personal=include_personal)
+        if ws_min is None:
+            # Fallback to API if table read failed
+            if DEBUG_MODE:
+                print("[DEBUG] Table read failed, falling back to API workspace discovery")
+            ws_min = get_all_workspaces(include_personal=include_personal)
+        elif DEBUG_MODE:
+            print(f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source")
+    else:
+        if DEBUG_MODE:
+            print("[DEBUG] full_tenant_scan: Using API workspace discovery")
+        ws_min = get_all_workspaces(include_personal=include_personal)
+    
     if not ws_min:
         print("No workspaces discovered.")
         return
@@ -2587,7 +2777,8 @@ def full_tenant_scan_chunked(include_personal: bool = True,
                               parallel_capacities: int = 1,
                               capacity_filter: List[str] = None,
                               exclude_capacities: List[str] = None,
-                              capacity_priority: List[str] = None) -> None:
+                              capacity_priority: List[str] = None,
+                              workspace_table_source: str = None) -> None:
     """
     Full tenant scan with automatic rate limit management for very large tenants.
     Processes workspaces in hourly chunks, respecting the 500 API calls/hour limit.
@@ -2606,6 +2797,7 @@ def full_tenant_scan_chunked(include_personal: bool = True,
         capacity_filter: Only scan these capacity IDs (e.g., ['cap-123', 'cap-456'])
         exclude_capacities: Skip these capacity IDs (e.g., ['shared'])
         capacity_priority: Process capacities in this order (rest follow)
+        workspace_table_source: Read workspace list from table instead of API (optional)
     """
     # Use global settings if not specified
     if enable_checkpointing is None:
@@ -2628,7 +2820,23 @@ def full_tenant_scan_chunked(include_personal: bool = True,
             start_chunk_idx = checkpoint.get('next_chunk_idx', 0)
             print(f"🔄 Resuming from checkpoint: {len(completed_batch_indices)} batches already completed")
     
-    ws_min = get_all_workspaces(include_personal=include_personal)
+    # Get workspace list from table or API
+    if workspace_table_source:
+        if DEBUG_MODE:
+            print(f"[DEBUG] full_tenant_scan_chunked: Using workspace table source '{workspace_table_source}'")
+        ws_min = read_workspaces_from_table(workspace_table_source, include_personal=include_personal)
+        if ws_min is None:
+            # Fallback to API if table read failed
+            if DEBUG_MODE:
+                print("[DEBUG] Table read failed, falling back to API workspace discovery")
+            ws_min = get_all_workspaces(include_personal=include_personal)
+        elif DEBUG_MODE:
+            print(f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source")
+    else:
+        if DEBUG_MODE:
+            print("[DEBUG] full_tenant_scan_chunked: Using API workspace discovery")
+        ws_min = get_all_workspaces(include_personal=include_personal)
+    
     if not ws_min:
         print("No workspaces discovered.")
         return
@@ -3897,6 +4105,14 @@ Examples:
         help='Exclude personal workspaces from scan'
     )
     parser.add_argument(
+        '--workspace-table-source',
+        type=str,
+        metavar='TABLE_NAME',
+        help='Read workspace list from lakehouse table/parquet file instead of API. '
+             'Requires workspace_id column. Automatically falls back to API if read fails. '
+             'Example: workspace_inventory or ./my_workspaces.parquet'
+    )
+    parser.add_argument(
         '--table-name',
         type=str,
         default='tenant_cloud_connections',
@@ -4065,6 +4281,8 @@ Examples:
                 print(f"Max batches/hour: {args.max_batches_per_hour}")
                 if args.group_by_capacity:
                     print(f"Capacity grouping: ENABLED")
+                if args.workspace_table_source:
+                    print(f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)")
                 full_tenant_scan_chunked(
                     include_personal=include_personal,
                     max_batches_per_hour=args.max_batches_per_hour,
@@ -4076,12 +4294,15 @@ Examples:
                     parallel_capacities=args.parallel_capacities,
                     capacity_filter=capacity_filter,
                     exclude_capacities=exclude_capacities,
-                    capacity_priority=capacity_priority
+                    capacity_priority=capacity_priority,
+                    workspace_table_source=args.workspace_table_source
                 )
             else:
                 print(f"Mode: Standard (MAX_PARALLEL_SCANS={MAX_PARALLEL_SCANS})")
                 if args.group_by_capacity:
                     print(f"Capacity grouping: ENABLED")
+                if args.workspace_table_source:
+                    print(f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)")
                 full_tenant_scan(
                     include_personal=include_personal,
                     curated_dir=args.curated_dir,
@@ -4091,7 +4312,8 @@ Examples:
                     max_calls_per_hour=args.max_calls_per_hour,
                     capacity_filter=capacity_filter,
                     exclude_capacities=exclude_capacities,
-                    capacity_priority=capacity_priority
+                    capacity_priority=capacity_priority,
+                    workspace_table_source=args.workspace_table_source
                 )
         
         elif args.incremental:
