@@ -3,6 +3,8 @@
 # Full tenant scan + Incremental scan (includes Personal workspaces)
 # Auth: Delegated Fabric Admin (default) or Service Principal
 
+__version__ = "1.0.0-beta.1"
+
 import os
 import sys
 import json
@@ -3752,6 +3754,12 @@ Examples:
   Get specific scan result:
     python %(prog)s --scan-id YOUR_SCAN_ID
         """
+    )
+    
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {__version__}'
     )
     
     # Scan mode options (mutually exclusive)
