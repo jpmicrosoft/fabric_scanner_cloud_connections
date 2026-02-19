@@ -58,7 +58,7 @@ try:
     SPARK_AVAILABLE = True
     try:
         spark = SparkSession.builder.getOrCreate()
-    except:
+    except Exception:
         SPARK_AVAILABLE = False
         spark = None
 except ImportError:
@@ -250,6 +250,7 @@ CLOUD_CONNECTORS = {
 }
 
 # --- API Call Tracking (for quota monitoring) ---
+_api_call_lock = threading.Lock()
 API_CALL_COUNTER = {
     'count': 0,
     'start_time': None,
@@ -257,35 +258,37 @@ API_CALL_COUNTER = {
 }
 
 def _track_api_call():
-    """Internal: Track API calls for quota monitoring."""
+    """Internal: Track API calls for quota monitoring (thread-safe)."""
     global API_CALL_COUNTER
-    if API_CALL_COUNTER['start_time'] is None:
-        API_CALL_COUNTER['start_time'] = time.time()
-        API_CALL_COUNTER['last_reset'] = time.time()
-    
-    API_CALL_COUNTER['count'] += 1
-    
-    # Auto-reset counter every hour
-    elapsed = time.time() - API_CALL_COUNTER['last_reset']
-    if elapsed >= 3600:
-        API_CALL_COUNTER['count'] = 1
-        API_CALL_COUNTER['last_reset'] = time.time()
+    with _api_call_lock:
+        if API_CALL_COUNTER['start_time'] is None:
+            API_CALL_COUNTER['start_time'] = time.time()
+            API_CALL_COUNTER['last_reset'] = time.time()
+        
+        API_CALL_COUNTER['count'] += 1
+        
+        # Auto-reset counter every hour
+        elapsed = time.time() - API_CALL_COUNTER['last_reset']
+        if elapsed >= 3600:
+            API_CALL_COUNTER['count'] = 1
+            API_CALL_COUNTER['last_reset'] = time.time()
 
 def get_api_call_stats() -> dict:
     """Get current API call statistics."""
-    if API_CALL_COUNTER['start_time'] is None:
-        return {'calls': 0, 'elapsed_minutes': 0, 'rate_per_hour': 0}
-    
-    elapsed = time.time() - API_CALL_COUNTER['start_time']
-    elapsed_minutes = elapsed / 60
-    rate_per_hour = (API_CALL_COUNTER['count'] / elapsed) * 3600 if elapsed > 0 else 0
-    
-    return {
-        'calls': API_CALL_COUNTER['count'],
-        'elapsed_minutes': elapsed_minutes,
-        'rate_per_hour': rate_per_hour,
-        'percentage_used': (rate_per_hour / 500) * 100 if rate_per_hour > 0 else 0
-    }
+    with _api_call_lock:
+        if API_CALL_COUNTER['start_time'] is None:
+            return {'calls': 0, 'elapsed_minutes': 0, 'rate_per_hour': 0}
+        
+        elapsed = time.time() - API_CALL_COUNTER['start_time']
+        elapsed_minutes = elapsed / 60
+        rate_per_hour = (API_CALL_COUNTER['count'] / elapsed) * 3600 if elapsed > 0 else 0
+        
+        return {
+            'calls': API_CALL_COUNTER['count'],
+            'elapsed_minutes': elapsed_minutes,
+            'rate_per_hour': rate_per_hour,
+            'percentage_used': (rate_per_hour / 500) * 100 if rate_per_hour > 0 else 0
+        }
 
 def print_api_call_stats():
     """Print current API usage statistics."""
@@ -530,7 +533,7 @@ def get_access_token_spn() -> str:
         "scope": FABRIC_SCOPE,
         "grant_type": "client_credentials",
     }
-    r = requests.post(AUTH_URL, data=data)
+    r = requests.post(AUTH_URL, data=data, timeout=30)
     r.raise_for_status()
     token_response = r.json()
     
@@ -621,7 +624,7 @@ def get_upload_token() -> str:
             "scope": FABRIC_SCOPE,
             "grant_type": "client_credentials",
         }
-        r = requests.post(upload_auth_url, data=data)
+        r = requests.post(upload_auth_url, data=data, timeout=30)
         r.raise_for_status()
         return r.json().get("access_token")
     
@@ -665,7 +668,7 @@ def ensure_lakehouse_directory(directory_path: str, workspace_id: str, lakehouse
         }
         
         # Upload empty file to create directory
-        response = requests.put(url, headers=headers, data=b"")
+        response = requests.put(url, headers=headers, data=b"", timeout=30)
         
         if DEBUG_MODE:
             print(f"   [DEBUG] Directory creation: {directory_path}")
@@ -737,7 +740,7 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         }
         
         # PUT request to upload/overwrite file
-        response = requests.put(url, headers=headers, data=file_content)
+        response = requests.put(url, headers=headers, data=file_content, timeout=120)
         
         if response.status_code in [200, 201]:
             print(f"✅ Uploaded to lakehouse: {lakehouse_path}")
@@ -1057,7 +1060,7 @@ class ConnectionHashTracker:
                             'last_scan_time': row.last_scan_time
                         }
                     return stored_hashes
-                except:
+                except Exception:
                     return {}
             else:
                 # Read from local file (pandas)
@@ -1125,7 +1128,7 @@ class ConnectionHashTracker:
                         "coalesce(new.last_scan_time, old.last_scan_time) as last_scan_time"
                     )
                     df_merged.write.mode("overwrite").saveAsTable(self.hash_table)
-                except:
+                except Exception:
                     # Table doesn't exist yet
                     df_new.write.mode("overwrite").saveAsTable(self.hash_table)
             else:
@@ -1334,52 +1337,14 @@ def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
     _track_api_call()  # Track API usage
     
     try:
-        r = requests.get(url, headers=HEADERS, params=params)
+        r = requests.get(url, headers=HEADERS, params=params, timeout=30)
         r.raise_for_status()
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401:
             # Token expired, refresh and retry
             print("⚠️  Token expired, refreshing authentication...")
             refresh_access_token()
-            r = requests.get(url, headers=HEADERS, params=params)
-            r.raise_for_status()
-        else:
-            raise
-    
-    payload = r.json() or {}
-    
-    # Handle different response structures
-    if isinstance(payload, list):
-        workspaces = payload
-    elif isinstance(payload, dict):
-        workspaces = payload.get("workspaces", [])
-    else:
-        workspaces = []
-    
-    # Ensure all items are dicts
-    return [ws for ws in workspaces if isinstance(ws, dict)]
-
-
-def modified_workspace_ids(modified_since_iso: str, include_personal: bool = True) -> List[Dict[str, Any]]:
-    # Auto-refresh token if close to expiry
-    refresh_access_token()
-    
-    url = f"{PBI_ADMIN_BASE}/workspaces/modified"
-    params = {
-        "modifiedSince": modified_since_iso,
-        "excludePersonalWorkspaces": str(not include_personal).lower(),
-    }
-    _track_api_call()  # Track API usage
-    
-    try:
-        r = requests.get(url, headers=HEADERS, params=params)
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 401:
-            # Token expired, refresh and retry
-            print("⚠️  Token expired, refreshing authentication...")
-            refresh_access_token()
-            r = requests.get(url, headers=HEADERS, params=params)
+            r = requests.get(url, headers=HEADERS, params=params, timeout=30)
             r.raise_for_status()
         else:
             raise
@@ -1415,7 +1380,7 @@ def post_workspace_info(workspace_ids: List[str], max_retries: int = 3) -> str:
     for attempt in range(max_retries):
         try:
             _track_api_call()  # Track API usage
-            r = requests.post(url, headers=HEADERS, json=body)
+            r = requests.post(url, headers=HEADERS, json=body, timeout=30)
             r.raise_for_status()
             
             response_data = r.json() or {}
@@ -1464,7 +1429,7 @@ def poll_scan_status(scan_id: str) -> None:
         
         try:
             _track_api_call()  # Track API usage
-            r = requests.get(url, headers=HEADERS)
+            r = requests.get(url, headers=HEADERS, timeout=30)
             
             if r.status_code == 202:
                 if time.time() - start > SCAN_TIMEOUT_MINUTES * 60:
@@ -1509,7 +1474,7 @@ def read_scan_result(scan_id: str) -> Dict[str, Any]:
     for attempt in range(max_retries):
         try:
             _track_api_call()  # Track API usage
-            r = requests.get(url, headers=HEADERS)
+            r = requests.get(url, headers=HEADERS, timeout=30)
             r.raise_for_status()
             
             return r.json()
@@ -1630,6 +1595,7 @@ def get_scan_result_by_id(
             print(f"Overwrote data in {curated_dir}")
         
         # Register or refresh SQL table
+        _validate_sql_identifier(table_name, "table name")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         print(f"Registered table: {table_name}")
@@ -1760,9 +1726,16 @@ def _build_target(server, database, endpoint):
     return " | ".join(parts) if parts else None
 
 
+def _validate_sql_identifier(name: str, label: str = "identifier") -> None:
+    """Validate that a string is safe to use in a SQL statement (alphanumeric, underscores, dots only)."""
+    if not re.match(r'^[a-zA-Z0-9_\.]+$', name):
+        raise ValueError(f"Invalid {label} '{name}'. Only alphanumeric characters, underscores, and dots are allowed.")
+
+
 def _save_data(rows, curated_dir, table_name, mode="overwrite"):
     """Save data using Spark (Fabric) or pandas (local)."""
     if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
+        _validate_sql_identifier(table_name, "table name")
         # Use Spark
         df = spark.createDataFrame(rows)
         df = (
@@ -1943,7 +1916,7 @@ def get_activity_events(days_back: int = 30, activity_filter: str = None) -> Lis
                 params["continuationToken"] = continuation_token
             
             try:
-                r = requests.get(url, headers=HEADERS, params=params)
+                r = requests.get(url, headers=HEADERS, params=params, timeout=30)
                 r.raise_for_status()
                 data = r.json()
                 
@@ -2733,15 +2706,15 @@ def full_tenant_scan(include_personal: bool = True,
 
         print(f"📦 Processing {len(batches)} batches...")
     
-    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
-        futures = [pool.submit(run_one_batch, b) for b in batches]
-        
-        # Progress bar if available
-        future_iterator = as_completed(futures)
-        if TQDM_AVAILABLE:
-            future_iterator = tqdm(as_completed(futures), total=len(futures), 
-                                  desc="Scanning batches", unit="batch")
-        
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
+            futures = [pool.submit(run_one_batch, b) for b in batches]
+            
+            # Progress bar if available
+            future_iterator = as_completed(futures)
+            if TQDM_AVAILABLE:
+                future_iterator = tqdm(as_completed(futures), total=len(futures), 
+                                      desc="Scanning batches", unit="batch")
+            
             for fut in future_iterator:
                 scan_payloads.append(fut.result())
 
@@ -2958,6 +2931,7 @@ def full_tenant_scan_chunked(include_personal: bool = True,
                     print(f"💾 Saved {len(all_rows)} rows (initial write).")
                 
                 # Update SQL table
+                _validate_sql_identifier(table_name, "table name")
                 spark.sql(f"DROP TABLE IF EXISTS {table_name}")
                 spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
             else:
@@ -3134,8 +3108,6 @@ def incremental_update(modified_since_iso: str,
     
     print(f"\n📊 Scanning {len(workspaces_to_scan)} workspaces with changes...")
 
-    print(f"\n📊 Scanning {len(workspaces_to_scan)} workspaces with changes...")
-
     batches = [workspaces_to_scan[i:i+BATCH_SIZE_WORKSPACES] for i in range(0, len(workspaces_to_scan), BATCH_SIZE_WORKSPACES)]
     scan_payloads: List[Dict[str, Any]] = []
 
@@ -3205,6 +3177,7 @@ def incremental_update(modified_since_iso: str,
         except Exception:
             df_merged = df_new
         df_merged.write.mode("overwrite").parquet(curated_dir)
+        _validate_sql_identifier(table_name, "table name")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         row_count = df_merged.count()
@@ -3427,6 +3400,7 @@ def scan_json_directory_for_connections(
         # Write output
         df_merged.write.mode("overwrite").parquet(curated_dir)
         
+        _validate_sql_identifier(table_name, "table name")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         

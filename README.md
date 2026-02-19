@@ -1094,6 +1094,9 @@ This is **intentionally conservative** - better to underestimate capacity than g
 - **Chunked scan behavior**: Automatically processes workspaces in hourly batches, waits between chunks, and saves progress incrementally
 - **Rate limit sharing**: The 500/hour limit is shared across all users in your organization. Use `max_batches_per_hour` to leave room for others
 - **Retry logic**: Automatic retry with exponential backoff for 429 (rate limit) errors
+- **Request timeouts**: All HTTP requests enforce a 30-second timeout (120 seconds for file uploads) to prevent indefinite hangs
+- **SQL injection protection**: Table names are validated (alphanumeric, underscores, dots only) before use in any SQL statements
+- **Thread-safe API tracking**: API call counter uses a lock for safe concurrent access from parallel workers
 - Limits: ≤100 workspace IDs per `getInfo`; poll 30–60s intervals.
 - Personal workspaces are **included** when `include_personal=True`.
 - **Scan ID retrieval**: Scan results are available for 24 hours after completion.
@@ -2154,6 +2157,18 @@ CLIENT_SECRET = "real-secret-here"  # SECURITY RISK!
 - ❌ Never commit credentials to Git (even private repos)
 - ❌ Never share credentials via email/chat
 - ❌ Never log credentials to console or files
+
+**Built-in Security Hardening:**
+
+The script includes the following security measures:
+
+| Protection | Description |
+|---|---|
+| **HTTP Request Timeouts** | All HTTP requests enforce a 30-second timeout (120s for file uploads) to prevent indefinite hangs from network issues or unresponsive endpoints. |
+| **SQL Identifier Validation** | Table names used in Spark SQL statements are validated against `^[a-zA-Z0-9_\.]+$` to prevent SQL injection. Invalid names raise a `ValueError`. |
+| **Thread-safe API Tracking** | The API call counter uses a `threading.Lock` to prevent race conditions when parallel workers update quota statistics concurrently. |
+| **Token Caching with Expiry** | Access tokens are cached with a 5-minute pre-expiry buffer and auto-refreshed, avoiding unnecessary credential round-trips. |
+| **No Credential Logging** | Secrets and tokens are never printed to console or written to log files. |
 
 **Q: What permissions does the Service Principal need? (Principle of Least Privilege)**
 
