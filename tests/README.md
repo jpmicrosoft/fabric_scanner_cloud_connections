@@ -1,6 +1,6 @@
 # Test Suite - Fabric Scanner Cloud Connections
 
-This directory contains comprehensive tests for the Fabric Scanner Cloud Connections project, covering all major features including capacity metadata (Phase 1), capacity grouping (Phase 2), and parallel capacity scanning (Phase 3).
+This directory contains comprehensive tests for the Fabric Scanner Cloud Connections project, covering all major features including capacity metadata (Phase 1), capacity grouping (Phase 2), parallel capacity scanning (Phase 3), and workspace table source (Phase 4).
 
 ## Test Files
 
@@ -70,6 +70,41 @@ Success rate: 100.0%
 
 ---
 
+### test_workspace_table_source.py
+**Phase 4: Workspace Table Source Validation**
+
+Tests the workspace table source functionality that allows reading workspace lists from lakehouse tables or parquet files instead of API calls, with comprehensive security and data quality validation.
+
+**Test Coverage:**
+- ✅ Empty/whitespace table name rejection
+- ✅ SQL injection prevention (7 attack patterns)
+- ✅ Valid table name acceptance
+- ✅ Missing required column detection (Spark)
+- ✅ Null workspace_id filtering (Spark)
+- ✅ Missing required column detection (Pandas)
+- ✅ Null workspace_id filtering (Pandas)
+- ✅ Empty table API fallback
+- ✅ File not found API fallback
+- ✅ Personal workspace filtering
+- ✅ All 10 test scenarios pass
+
+**Run this test:**
+```powershell
+cd tests
+python test_workspace_table_source.py
+```
+
+**Expected Output:**
+```
+TEST SUMMARY
+Total tests: 10
+Passed: 10
+Failed: 0
+Success rate: 100.0%
+```
+
+---
+
 ### test_core_functions.py
 **Core Scanner Functions**
 
@@ -112,6 +147,7 @@ Run all tests sequentially:
 cd tests
 python test_capacity_metadata.py
 python test_phase3_parallel_scanning.py
+python test_workspace_table_source.py
 python test_core_functions.py
 ```
 
@@ -178,7 +214,7 @@ def test_feature():
 **A:** No. The tests use mock objects and don't make actual API calls. Authentication globals (`HEADERS` and `ACCESS_TOKEN`) are set to mock values in each test file, so no real authentication is attempted.
 
 ### Q: How long do the tests take to run?
-**A:** All 25 tests (across 3 files) complete in **under 5 seconds** since they use mocks instead of real API calls.
+**A:** All 35 tests (across 4 files) complete in **under 5 seconds** since they use mocks instead of real API calls.
 
 ### Q: Can I run tests from the main project directory?
 **A:** Yes, but it's recommended to run from the `tests/` directory:
@@ -290,8 +326,9 @@ import pdb; pdb.set_trace()
 - ✅ **Phase 1** (Capacity Metadata): 5 tests - 100% coverage
 - ✅ **Phase 2** (Capacity Grouping): Validated in Phase 3 tests
 - ✅ **Phase 3** (Parallel Scanning): 10 tests - 100% coverage
+- ✅ **Phase 4** (Workspace Table Source): 10 tests - 100% coverage
 - ✅ **Core Functions**: 10 tests covering scanning, checkpoints, CLI
-- ✅ **Total**: 25 tests, 100% pass rate
+- ✅ **Total**: 35 tests, 100% pass rate
 
 ### Q: Why are there warnings about datetime.utcnow()?
 **A:** This is a Python 3.12+ deprecation warning. It's informational only and doesn't affect test results. To fix, update to:
@@ -348,9 +385,10 @@ All tests should show **100% pass rate**:
 ```
 ✓ test_capacity_metadata.py: 5/5 passed (100%)
 ✓ test_phase3_parallel_scanning.py: 10/10 passed (100%)
+✓ test_workspace_table_source.py: 10/10 passed (100%)
 ✓ test_core_functions.py: 10/10 passed (100%)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Total: 25/25 tests passed (100%)
+Total: 35/35 tests passed (100%)
 ```
 
 Any failures indicate a regression that should be investigated immediately.
@@ -381,6 +419,6 @@ For questions about the tests:
 ---
 
 **Last Updated:** January 2026  
-**Test Suite Version:** 1.0  
-**Total Tests:** 25  
+**Test Suite Version:** 1.1  
+**Total Tests:** 35  
 **Pass Rate:** 100%

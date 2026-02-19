@@ -152,7 +152,118 @@ Retrieves results from a previous scan using the WorkspaceInfo GetScanResult API
 - **24-hour window**: Works with scans completed within the last 24 hours
 - **Includes personal workspaces**: Gets all workspaces from the original scan
 
-### 7. JSON Directory Scan
+### 7. Workspace Table Source (NEW)
+**Optimize performance and reduce API calls** by reading the workspace list from a pre-existing lakehouse table instead of calling the Scanner API.
+
+**Use Cases:**
+- **Pre-filtered scans**: Only scan production workspaces by maintaining a curated workspace list
+- **Governance integration**: Use workspace inventories from external governance or CMDB systems
+- **Scheduled scans**: Ensure consistent workspace scope across scheduled scan jobs
+- **API quota management**: Save API calls for actual scanning (workspace discovery can be 1 API call)
+- **Performance**: Faster scan startup with no workspace discovery delay
+
+**Expected Table Schema:**
+- `workspace_id` (required): Workspace GUID - **This column is mandatory**
+- `workspace_name` (optional): Workspace display name
+- `workspace_type` (optional): Workspace type (e.g., "PersonalGroup", "Workspace")
+- `capacity_id` (optional): Capacity ID for capacity-based filtering
+
+**How It Works:**
+1. Scanner reads workspace list from your table/file instead of calling `GetModifiedWorkspaces` API
+2. Table name is validated (alphanumeric, underscores, dots only) to prevent SQL injection
+3. If table read fails or returns no workspaces, automatically falls back to API call
+4. Applies all normal filters (`--no-personal`, `--capacity-filter`, etc.) to the workspace list
+5. Proceeds with normal scanning workflow
+
+**Security Note:**
+Table names are validated to allow only alphanumeric characters, underscores, and dots. Invalid table names will trigger an error and fallback to API discovery.
+
+**CLI Usage:**
+```powershell
+# Use workspace list from lakehouse table
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source workspace_inventory
+
+# Combine with no-personal filter (filters after reading from table)
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source workspace_inventory --no-personal
+
+# Works with chunked mode for large tenants
+python fabric_scanner_cloud_connections.py --full-scan --large-shared-tenants --workspace-table-source my_workspaces
+
+# Works with capacity grouping
+python fabric_scanner_cloud_connections.py --full-scan --group-by-capacity --workspace-table-source workspace_catalog
+
+# Works with capacity filtering
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source workspace_inventory --capacity-filter cap-prod-1
+```
+
+**Fabric Notebook Example:**
+```python
+# Option 1: Create workspace inventory table from previous scan results
+spark.sql("""
+CREATE TABLE workspace_inventory AS
+SELECT DISTINCT
+    workspace_id,
+    workspace_name,
+    workspace_kind as workspace_type,
+    -- Extract capacity_id if available from your data
+    NULL as capacity_id
+FROM tenant_cloud_connections
+WHERE workspace_kind != 'PersonalGroup'  -- Pre-filter out personal workspaces
+""")
+
+# Option 2: Create from Power BI Admin API workspace list
+# (You would run a separate script to populate this table)
+spark.sql("""
+CREATE TABLE workspace_inventory (
+    workspace_id STRING,
+    workspace_name STRING,
+    workspace_type STRING,
+    capacity_id STRING
+)
+""")
+
+# Use the table for subsequent scans
+%run Files/scripts/fabric_scanner_cloud_connections
+full_tenant_scan(workspace_table_source="workspace_inventory")
+```
+
+**Local Execution Example:**
+```powershell
+# Create parquet file from your workspace data source
+# (Example: export from Power BI Admin API, governance tool, etc.)
+
+# Then use it for scanning
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source ./my_workspaces.parquet
+
+# Or place in curated directory
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source my_workspaces
+# This will look for: scanner_output/curated/my_workspaces.parquet
+```
+
+**Creating Sample Parquet File (Python):**
+```python
+import pandas as pd
+
+# Your workspace data from any source
+workspaces_df = pd.DataFrame({
+    "workspace_id": ["guid1", "guid2", "guid3"],
+    "workspace_name": ["Sales", "Marketing", "Finance"],
+    "workspace_type": ["Workspace", "Workspace", "Workspace"],
+    "capacity_id": ["cap-prod-1", "cap-prod-1", "cap-prod-2"]
+})
+
+workspaces_df.to_parquet("my_workspaces.parquet")
+```
+
+**Benefits:**
+- **Faster scans**: Eliminates workspace discovery API call (saves 1+ minutes on large tenants)
+- **Pre-filtered lists**: Only scan workspaces you care about (e.g., exclude test/dev)
+- **External integration**: Use workspace lists from Governance tools, CMDB, or custom catalogs
+- **Consistent scope**: Ensure all scans use the same workspace set across runs
+- **API quota preservation**: Save API calls for actual scanning operations
+- **Automatic fallback**: If table read fails, automatically uses API discovery (no manual intervention needed)
+
+### 8. JSON Directory Scan
 Scans all JSON files in a lakehouse directory (e.g., previously saved scanner API responses) and extracts cloud connection information.
 - **Single file mode**: Process one specific JSON file for debugging/testing
 - **Batch mode**: Process all JSON files in a directory
@@ -167,7 +278,7 @@ Scans all JSON files in a lakehouse directory (e.g., previously saved scanner AP
 USE_DELEGATED = True  # True -> Delegated (Fabric Admin); False -> Service Principal
 
 # Debug logging
-DEBUG_MODE = False  # Set to True for detailed JSON structure logging
+DEBUG_MODE = False  # Set to True for detailed logging (JSON structure, workspace table reads, API calls)
 
 # JSON single file mode (for testing/debugging)
 JSON_SINGLE_FILE_MODE = False  # Set to True to process only one specific JSON file
@@ -228,6 +339,9 @@ python fabric_scanner_cloud_connections.py --full-scan
 
 # Full scan with rate limiting (safe for large shared tenants)
 python fabric_scanner_cloud_connections.py --full-scan --large-shared-tenants
+
+# Full scan using workspace list from table (reduces API calls)
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source workspace_inventory
 
 # Incremental scan (last 24 hours - default, with hash optimization)
 python fabric_scanner_cloud_connections.py --incremental
@@ -311,6 +425,7 @@ python fabric_scanner_cloud_connections.py --help
 
 **General Options:**
 - `--no-personal` - Exclude personal workspaces from scan
+- `--workspace-table-source TABLE_NAME` - Read workspace list from lakehouse table instead of API (e.g., workspace_inventory)
 - `--table-name NAME` - SQL table name for results (default: tenant_cloud_connections)
 - `--curated-dir PATH` - Output directory for curated data
 - `--no-merge` - Overwrite existing data instead of merging
@@ -979,12 +1094,19 @@ This is **intentionally conservative** - better to underestimate capacity than g
 - **Chunked scan behavior**: Automatically processes workspaces in hourly batches, waits between chunks, and saves progress incrementally
 - **Rate limit sharing**: The 500/hour limit is shared across all users in your organization. Use `max_batches_per_hour` to leave room for others
 - **Retry logic**: Automatic retry with exponential backoff for 429 (rate limit) errors
+- **Request timeouts**: All HTTP requests enforce a 30-second timeout (120 seconds for file uploads) to prevent indefinite hangs
+- **SQL injection protection**: Table names are validated (alphanumeric, underscores, dots only) before use in any SQL statements
+- **Thread-safe API tracking**: API call counter uses a lock for safe concurrent access from parallel workers
 - Limits: ≤100 workspace IDs per `getInfo`; poll 30–60s intervals.
 - Personal workspaces are **included** when `include_personal=True`.
 - **Scan ID retrieval**: Scan results are available for 24 hours after completion.
 - **JSON directory scan**: Requires JSON files in the format produced by the Scanner API (with `workspace_sidecar` metadata).
 - **Single file mode**: Enable `JSON_SINGLE_FILE_MODE = True` to test individual JSON files.
-- **Debug mode**: Enable `DEBUG_MODE = True` to see detailed JSON structure logging.
+- **Debug mode**: Enable `DEBUG_MODE = True` to see detailed logging including:
+  - JSON structure and payload analysis
+  - Workspace table source reads (file paths, row counts, filtering)
+  - API call details and fallback behavior
+  - Data conversion and validation steps
 - **Flexible time windows**: Use `incremental_hours_back` for sub-day precision (e.g., 6 hours, 30 minutes).
 - All features can be run independently or in combination.
 - Extend `CLOUD_CONNECTORS` set to match your estate's connector types.
@@ -1436,6 +1558,128 @@ python fabric_scanner_cloud_connections.py --full-scan --large-shared-tenants --
 
 **Tip**: Run `--health-check` first to check if others are using the API, then choose your settings accordingly.
 
+### Workspace Table Source
+
+**Q: When should I use `--workspace-table-source` instead of letting the scanner discover workspaces via API?**
+
+A: Use workspace table source when you want to:
+
+1. **Reduce API calls**: Skip the GetModifiedWorkspaces API call (saves ~1 API call per full scan)
+2. **Pre-filter workspaces**: Only scan specific workspaces from a curated list
+3. **Integrate with external systems**: Use workspace lists from governance tools, CMDB, or custom catalogs
+4. **Consistent scope**: Ensure all scans use the exact same workspace set
+5. **Faster startup**: No waiting for workspace discovery API call
+
+**Don't use it if**:
+- You want to discover new workspaces automatically
+- Your workspace list changes frequently
+- You're doing ad-hoc testing or exploration
+
+**Q: What table schema is required for `--workspace-table-source`?**
+
+A: **Required column:**
+- `workspace_id` (string/GUID)
+
+**Optional columns** (enhance the scan):
+- `workspace_name` (string) - Used for logging/reporting
+- `workspace_type` (string) - Enables `--no-personal` filtering
+- `capacity_id` (string) - Enables capacity-based grouping
+
+**Example table creation:**
+```sql
+-- Create from existing scan results
+CREATE TABLE workspace_inventory AS
+SELECT DISTINCT
+    workspace_id,
+    workspace_name,
+    workspace_type,
+    capacity_id
+FROM tenant_cloud_connections;
+
+-- Or create custom filtered list
+CREATE TABLE prod_workspaces AS
+SELECT workspace_id, workspace_name, workspace_type, capacity_id
+FROM tenant_cloud_connections
+WHERE workspace_name NOT LIKE '%Test%'
+  AND workspace_name NOT LIKE '%Dev%'
+  AND workspace_type != 'PersonalGroup';
+```
+
+**Q: Can I use a local parquet file for `--workspace-table-source` when running locally?**
+
+A: Yes! The scanner supports both:
+
+**Fabric environment** (reads from Spark table):
+```powershell
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source workspace_inventory
+```
+
+**Local environment** (reads from parquet file):
+```powershell
+# Reads from ./scanner_output/curated/workspace_inventory.parquet
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source workspace_inventory
+
+# Or specify full path
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source ./my_workspaces.parquet
+```
+
+**Q: What happens if the workspace table read fails?**
+
+A: The scanner **automatically falls back** to API discovery:
+
+```
+❌ Error reading workspace table 'bad_table_name': Table or view not found
+   Falling back to API call...
+📊 Discovered 1,234 workspaces via API
+```
+
+This ensures your scan always works, even if the table name is wrong or the table doesn't exist.
+
+**Q: Does `--workspace-table-source` work with all scan modes?**
+
+A: Yes! It works with:
+- ✅ Full scan (standard)
+- ✅ Full scan (chunked mode with `--large-shared-tenants`)
+- ✅ Capacity-based grouping (`--group-by-capacity`)
+- ✅ Parallel capacity scanning (`--parallel-capacities`)
+- ✅ All filtering options (`--no-personal`, `--capacity-filter`)
+
+**Q: How much does `--workspace-table-source` actually speed things up?**
+
+A: **Minimal speed improvement** for the scan itself (saves 1 API call = ~1-2 seconds), but the real benefits are:
+
+**Primary benefits:**
+- **Consistent scope**: Every scan uses the same workspace set (important for compliance/governance)
+- **Pre-filtered scans**: Only scan workspaces you care about (could reduce scan time by 50%+ if you exclude many workspaces)
+- **External integration**: Use workspace lists from other tools/processes
+- **API quota preservation**: Save the GetModifiedWorkspaces call for other operations
+
+**Example scenario where it's valuable:**
+```powershell
+# Create filtered list once (exclude test/dev workspaces)
+CREATE TABLE prod_workspaces AS 
+SELECT * FROM workspace_inventory
+WHERE workspace_name NOT LIKE '%Test%'
+  AND workspace_name NOT LIKE '%Dev%';
+# Result: 500 workspaces instead of 2,000
+
+# All future scans use filtered list (4x faster)
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source prod_workspaces
+```
+
+**Q: Can I combine `--workspace-table-source` with `--no-personal`?**
+
+A: Yes, and they work together:
+
+1. **Table read** happens first (loads workspace list from table)
+2. **Personal workspace filter** applies second (if `--no-personal` specified and table has `workspace_type` column)
+
+```powershell
+# Table has 1,000 workspaces (including 200 personal)
+# This command scans 800 workspaces (excludes personal from table)
+python fabric_scanner_cloud_connections.py --full-scan --workspace-table-source workspace_inventory --no-personal
+```
+
 ### Troubleshooting
 
 **Q: How do I verify there are no duplicate records?**
@@ -1565,6 +1809,251 @@ auth:
   mode: spn
 ```
 
+**Q: Troubleshooting workspace table source issues?**
+
+A: Common problems when using `--workspace-table-source`:
+
+**1. Invalid table name error**
+```
+Error: Invalid table name 'workspace; DROP TABLE users--'. Only alphanumeric characters, underscores, and dots are allowed.
+```
+
+**Cause:** Table name validation prevents SQL injection attacks and empty/invalid names.
+
+**Solution:**
+```powershell
+# ✅ Valid table names
+--workspace-table-source workspace_inventory
+--workspace-table-source prod.workspace_catalog
+--workspace-table-source my_lakehouse.dbo.workspaces
+
+# ❌ Invalid table names (security risk or invalid format)
+--workspace-table-source "workspace; DELETE *"
+--workspace-table-source "../../../etc/passwd"
+--workspace-table-source ""  # Empty string
+--workspace-table-source "   "  # Only whitespace
+```
+
+**2. Table not found error**
+```
+Error: Table 'workspace_inventory' not found
+```
+
+**Solution:**
+```python
+# Verify table exists (run in Fabric notebook):
+display(spark.sql("SHOW TABLES"))
+
+# Or check specific table:
+try:
+    spark.sql("SELECT COUNT(*) FROM workspace_inventory").show()
+except:
+    print("Table doesn't exist")
+```
+
+For local parquet files:
+```powershell
+# Check file exists
+Test-Path "workspace_inventory.parquet"  # Returns True if exists
+Test-Path "Files/workspace_inventory.parquet"  # Alternative path
+```
+
+**3. Missing workspace_id column**
+```
+Error: Required column 'workspace_id' not found in table
+```
+
+**Solution:**
+```sql
+-- Check your table schema
+DESCRIBE workspace_inventory;
+
+-- Required: workspace_id column must exist
+-- Fix by recreating table with correct schema:
+CREATE TABLE workspace_inventory AS
+SELECT 
+    id as workspace_id,  -- Rename if needed
+    name as workspace_name,
+    type as workspace_type,
+    capacityId as capacity_id
+FROM your_source_table;
+```
+
+**4. Table read succeeds but returns no workspaces**
+```
+Successfully read 0 workspaces from table. Falling back to API discovery...
+```
+
+**Diagnostics:**
+```sql
+-- Check table has data
+SELECT COUNT(*) FROM workspace_inventory;
+
+-- Check for null workspace_id values (these are automatically filtered out)
+SELECT COUNT(*) 
+FROM workspace_inventory 
+WHERE workspace_id IS NULL;
+
+-- Check workspace_id values are valid GUIDs
+SELECT workspace_id FROM workspace_inventory 
+WHERE workspace_id IS NOT NULL
+LIMIT 10;
+
+-- If using --no-personal, check how many non-personal workspaces:
+SELECT COUNT(*) 
+FROM workspace_inventory 
+WHERE workspace_type != 'PersonalGroup'
+  AND workspace_id IS NOT NULL;
+```
+
+**Note:** Rows with null `workspace_id` are automatically filtered out and logged in DEBUG_MODE.
+
+**5. Performance not improving with table source**
+
+**Common causes:**
+- Table doesn't pre-filter workspaces (contains all workspaces)
+- Table is slow to query (not optimized, no partitions)
+- Network/storage latency for parquet files
+
+**Optimization:**
+```sql
+-- Create optimized filtered table
+CREATE TABLE workspace_inventory_filtered
+USING DELTA  -- Use Delta format for better performance
+AS
+SELECT workspace_id, workspace_name, workspace_type, capacity_id
+FROM all_workspaces
+WHERE workspace_type NOT IN ('PersonalGroup', 'Test', 'Development')
+  AND capacity_id IN ('capacity-prod-1', 'capacity-prod-2');
+
+-- Now use the filtered table
+# python ... --workspace-table-source workspace_inventory_filtered
+```
+
+**6. Local parquet file path issues**
+
+**Symptoms:**
+```
+Error: File not found: workspace_inventory.parquet
+Trying alternative path: Files/workspace_inventory.parquet
+Error: File not found: Files/workspace_inventory.parquet
+Falling back to API discovery...
+```
+
+**Solutions:**
+```powershell
+# Check current directory
+Get-Location
+
+# Use absolute path if needed
+python fabric_scanner_cloud_connections.py \
+  --full-scan \
+  --workspace-table-source "C:\data\workspace_inventory.parquet"
+
+# Or use relative path from script location
+python fabric_scanner_cloud_connections.py \
+  --full-scan \
+  --workspace-table-source "data/workspace_inventory.parquet"
+
+# Verify file format
+(Get-Item workspace_inventory.parquet).Length  # Should show file size
+```
+
+**7. Table works in Fabric but fails locally (or vice versa)**
+
+**Expected behavior:**
+- In Fabric: Uses `spark.sql()` to read table
+- Locally: Uses `pandas.read_parquet()` to read file
+
+**Diagnostics:**
+```python
+# Check environment
+import sys
+try:
+    from pyspark.sql import SparkSession
+    print("Spark available - will try spark.sql() first")
+except:
+    print("Spark not available - will try parquet files")
+
+try:
+    import pandas as pd
+    print("Pandas available - can read parquet files")
+except:
+    print("Pandas not available - install with: pip install pandas")
+```
+
+**Solution:**
+- Fabric: Ensure table is in default lakehouse or use fully qualified name: `lakehouse_name.workspace_inventory`
+- Local: Ensure pandas is installed and parquet file exists in accessible location
+
+**8. Enable DEBUG_MODE for detailed troubleshooting**
+
+When troubleshooting workspace table source issues, enable debug mode to see detailed execution flow:
+
+```python
+# In script
+DEBUG_MODE = True
+```
+
+**Debug output shows:**
+```
+[DEBUG] full_tenant_scan: Using workspace table source 'workspace_inventory'
+[DEBUG] read_workspaces_from_table: Reading from Spark table 'workspace_inventory'
+[DEBUG] include_personal=True
+📊 Reading workspace list from table: workspace_inventory
+[DEBUG] Table row count before filtering: 150
+[DEBUG] Filtered out 5 rows with null workspace_id
+[DEBUG] Filtering out PersonalGroup workspaces
+[DEBUG] Table row count after filtering: 120
+[DEBUG] Successfully converted 120 rows to workspace dictionaries
+[DEBUG] Sample workspace: {'id': 'abc-123', 'name': 'Sales', 'type': 'Workspace', 'capacityId': 'cap-prod-1'}
+✅ Successfully loaded 120 workspaces from table 'workspace_inventory'
+[DEBUG] Successfully loaded 120 workspaces from table source
+```
+
+**What debug mode reveals:**
+- ✅ Which table/file is being read
+- ✅ Environment detection (Fabric vs local)
+- ✅ File path search attempts and results
+- ✅ Row counts before/after filtering
+- ✅ Null workspace_id filtering (NEW)
+- ✅ Personal workspace filtering details
+- ✅ Column availability and validation
+- ✅ Sample workspace structure
+- ✅ Fallback trigger reasons
+- ✅ Pandas availability status
+- ✅ Empty table/file detection
+
+**9. API fallback not happening when expected**
+
+If table read fails but script doesn't fall back to API:
+
+**Check:**
+```python
+# Enable debug mode in script to see fallback logic
+DEBUG_MODE = True
+
+# Then run your scan
+python fabric_scanner_cloud_connections.py \
+  --full-scan \
+  --workspace-table-source workspace_inventory
+```
+
+**Expected console output:**
+```
+Successfully read 150 workspaces from table 'workspace_inventory'
+# or
+Error reading from table 'workspace_inventory': [error details]
+Falling back to API workspace discovery...
+Successfully retrieved 500 workspaces from API
+```
+
+If fallback isn't working, manually verify API access:
+```powershell
+# Test API access separately
+python fabric_scanner_cloud_connections.py --health-check
+```
+
 **6. Missing required lakehouse IDs**
 ```powershell
 # ❌ WRONG - IDs not specified
@@ -1668,6 +2157,18 @@ CLIENT_SECRET = "real-secret-here"  # SECURITY RISK!
 - ❌ Never commit credentials to Git (even private repos)
 - ❌ Never share credentials via email/chat
 - ❌ Never log credentials to console or files
+
+**Built-in Security Hardening:**
+
+The script includes the following security measures:
+
+| Protection | Description |
+|---|---|
+| **HTTP Request Timeouts** | All HTTP requests enforce a 30-second timeout (120s for file uploads) to prevent indefinite hangs from network issues or unresponsive endpoints. |
+| **SQL Identifier Validation** | Table names used in Spark SQL statements are validated against `^[a-zA-Z0-9_\.]+$` to prevent SQL injection. Invalid names raise a `ValueError`. |
+| **Thread-safe API Tracking** | The API call counter uses a `threading.Lock` to prevent race conditions when parallel workers update quota statistics concurrently. |
+| **Token Caching with Expiry** | Access tokens are cached with a 5-minute pre-expiry buffer and auto-refreshed, avoiding unnecessary credential round-trips. |
+| **No Credential Logging** | Secrets and tokens are never printed to console or written to log files. |
 
 **Q: What permissions does the Service Principal need? (Principle of Least Privilege)**
 

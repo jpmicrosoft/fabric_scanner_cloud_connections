@@ -220,3 +220,10 @@ scanner_config.json
 # Runtime outputs and checkpoints
 checkpoints/
 scanner_output/
+
+# Test files and data
+test_workspaces.parquet
+test_*.parquet
+*_test.parquet
+test_data/
+test_validation.py

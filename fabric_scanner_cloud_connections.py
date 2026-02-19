@@ -12,6 +12,7 @@ import time
 import threading
 import argparse
 import hashlib
+import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -57,7 +58,7 @@ try:
     SPARK_AVAILABLE = True
     try:
         spark = SparkSession.builder.getOrCreate()
-    except:
+    except Exception:
         SPARK_AVAILABLE = False
         spark = None
 except ImportError:
@@ -249,6 +250,7 @@ CLOUD_CONNECTORS = {
 }
 
 # --- API Call Tracking (for quota monitoring) ---
+_api_call_lock = threading.Lock()
 API_CALL_COUNTER = {
     'count': 0,
     'start_time': None,
@@ -256,35 +258,37 @@ API_CALL_COUNTER = {
 }
 
 def _track_api_call():
-    """Internal: Track API calls for quota monitoring."""
+    """Internal: Track API calls for quota monitoring (thread-safe)."""
     global API_CALL_COUNTER
-    if API_CALL_COUNTER['start_time'] is None:
-        API_CALL_COUNTER['start_time'] = time.time()
-        API_CALL_COUNTER['last_reset'] = time.time()
-    
-    API_CALL_COUNTER['count'] += 1
-    
-    # Auto-reset counter every hour
-    elapsed = time.time() - API_CALL_COUNTER['last_reset']
-    if elapsed >= 3600:
-        API_CALL_COUNTER['count'] = 1
-        API_CALL_COUNTER['last_reset'] = time.time()
+    with _api_call_lock:
+        if API_CALL_COUNTER['start_time'] is None:
+            API_CALL_COUNTER['start_time'] = time.time()
+            API_CALL_COUNTER['last_reset'] = time.time()
+        
+        API_CALL_COUNTER['count'] += 1
+        
+        # Auto-reset counter every hour
+        elapsed = time.time() - API_CALL_COUNTER['last_reset']
+        if elapsed >= 3600:
+            API_CALL_COUNTER['count'] = 1
+            API_CALL_COUNTER['last_reset'] = time.time()
 
 def get_api_call_stats() -> dict:
     """Get current API call statistics."""
-    if API_CALL_COUNTER['start_time'] is None:
-        return {'calls': 0, 'elapsed_minutes': 0, 'rate_per_hour': 0}
-    
-    elapsed = time.time() - API_CALL_COUNTER['start_time']
-    elapsed_minutes = elapsed / 60
-    rate_per_hour = (API_CALL_COUNTER['count'] / elapsed) * 3600 if elapsed > 0 else 0
-    
-    return {
-        'calls': API_CALL_COUNTER['count'],
-        'elapsed_minutes': elapsed_minutes,
-        'rate_per_hour': rate_per_hour,
-        'percentage_used': (rate_per_hour / 500) * 100 if rate_per_hour > 0 else 0
-    }
+    with _api_call_lock:
+        if API_CALL_COUNTER['start_time'] is None:
+            return {'calls': 0, 'elapsed_minutes': 0, 'rate_per_hour': 0}
+        
+        elapsed = time.time() - API_CALL_COUNTER['start_time']
+        elapsed_minutes = elapsed / 60
+        rate_per_hour = (API_CALL_COUNTER['count'] / elapsed) * 3600 if elapsed > 0 else 0
+        
+        return {
+            'calls': API_CALL_COUNTER['count'],
+            'elapsed_minutes': elapsed_minutes,
+            'rate_per_hour': rate_per_hour,
+            'percentage_used': (rate_per_hour / 500) * 100 if rate_per_hour > 0 else 0
+        }
 
 def print_api_call_stats():
     """Print current API usage statistics."""
@@ -529,7 +533,7 @@ def get_access_token_spn() -> str:
         "scope": FABRIC_SCOPE,
         "grant_type": "client_credentials",
     }
-    r = requests.post(AUTH_URL, data=data)
+    r = requests.post(AUTH_URL, data=data, timeout=30)
     r.raise_for_status()
     token_response = r.json()
     
@@ -620,7 +624,7 @@ def get_upload_token() -> str:
             "scope": FABRIC_SCOPE,
             "grant_type": "client_credentials",
         }
-        r = requests.post(upload_auth_url, data=data)
+        r = requests.post(upload_auth_url, data=data, timeout=30)
         r.raise_for_status()
         return r.json().get("access_token")
     
@@ -664,7 +668,7 @@ def ensure_lakehouse_directory(directory_path: str, workspace_id: str, lakehouse
         }
         
         # Upload empty file to create directory
-        response = requests.put(url, headers=headers, data=b"")
+        response = requests.put(url, headers=headers, data=b"", timeout=30)
         
         if DEBUG_MODE:
             print(f"   [DEBUG] Directory creation: {directory_path}")
@@ -736,7 +740,7 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
         }
         
         # PUT request to upload/overwrite file
-        response = requests.put(url, headers=headers, data=file_content)
+        response = requests.put(url, headers=headers, data=file_content, timeout=120)
         
         if response.status_code in [200, 201]:
             print(f"✅ Uploaded to lakehouse: {lakehouse_path}")
@@ -1056,7 +1060,7 @@ class ConnectionHashTracker:
                             'last_scan_time': row.last_scan_time
                         }
                     return stored_hashes
-                except:
+                except Exception:
                     return {}
             else:
                 # Read from local file (pandas)
@@ -1124,7 +1128,7 @@ class ConnectionHashTracker:
                         "coalesce(new.last_scan_time, old.last_scan_time) as last_scan_time"
                     )
                     df_merged.write.mode("overwrite").saveAsTable(self.hash_table)
-                except:
+                except Exception:
                     # Table doesn't exist yet
                     df_new.write.mode("overwrite").saveAsTable(self.hash_table)
             else:
@@ -1153,6 +1157,177 @@ class ConnectionHashTracker:
 # --- Scanner API helpers ---
 
 
+def read_workspaces_from_table(table_name: str, include_personal: bool = True) -> List[Dict[str, Any]]:
+    """
+    Read workspace list from lakehouse table or local parquet file.
+    
+    Args:
+        table_name: Name of the table/file containing workspace data
+        include_personal: Whether to include personal workspaces
+    
+    Returns:
+        List of workspace dictionaries with 'id' and optionally 'name', 'type', 'capacityId'
+    
+    Expected table schema:
+        - workspace_id (required): Workspace GUID
+        - workspace_name (optional): Workspace display name
+        - workspace_type (optional): Workspace type
+        - capacity_id (optional): Capacity ID
+    """
+    workspaces = []
+    
+    # Validate table name is not empty
+    if not table_name or not table_name.strip():
+        raise ValueError("Table name cannot be empty")
+    
+    try:
+        if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
+            # Read from Spark table
+            if DEBUG_MODE:
+                print(f"[DEBUG] read_workspaces_from_table: Reading from Spark table '{table_name}'")
+                print(f"[DEBUG] include_personal={include_personal}")
+            
+            # Validate table name to prevent SQL injection (allow only alphanumeric, underscore, dot)
+            if not re.match(r'^[a-zA-Z0-9_\.]+$', table_name):
+                raise ValueError(f"Invalid table name '{table_name}'. Only alphanumeric characters, underscores, and dots are allowed.")
+            
+            print(f"📊 Reading workspace list from table: {table_name}")
+            df = spark.sql(f"SELECT * FROM {table_name}")
+            if DEBUG_MODE:
+                print(f"[DEBUG] Table row count before filtering: {df.count()}")
+            
+            # Validate required column exists
+            if "workspace_id" not in df.columns:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Required column 'workspace_id' not found in Spark table. Available: {df.columns}")
+                raise ValueError(f"Required column 'workspace_id' not found in table '{table_name}'")
+            
+            # Filter out null workspace_ids
+            rows_before = df.count() if DEBUG_MODE else 0
+            df = df.filter(F.col("workspace_id").isNotNull())
+            if DEBUG_MODE:
+                rows_after = df.count()
+                if rows_before != rows_after:
+                    print(f"[DEBUG] Filtered out {rows_before - rows_after} rows with null workspace_id")
+            
+            # Filter personal workspaces if needed
+            if not include_personal:
+                if DEBUG_MODE:
+                    print("[DEBUG] Filtering out PersonalGroup workspaces")
+                df = df.filter(F.col("workspace_type") != "PersonalGroup")
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Table row count after filtering: {df.count()}")
+            
+            # Convert to list of dicts
+            for row in df.collect():
+                ws_dict = {"id": row.workspace_id}
+                if hasattr(row, "workspace_name"):
+                    ws_dict["name"] = row.workspace_name
+                if hasattr(row, "workspace_type"):
+                    ws_dict["type"] = row.workspace_type
+                if hasattr(row, "capacity_id"):
+                    ws_dict["capacityId"] = row.capacity_id
+                workspaces.append(ws_dict)
+            
+            if not workspaces:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Table '{table_name}' returned 0 workspaces after conversion")
+                print(f"⚠️  Table '{table_name}' exists but contains no workspaces")
+                print("   Falling back to API call...")
+                return None
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries")
+                print(f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}")
+            print(f"✅ Successfully loaded {len(workspaces)} workspaces from table '{table_name}'")
+        
+        else:
+            # Read from local parquet file
+            if DEBUG_MODE:
+                print(f"[DEBUG] read_workspaces_from_table: Running in local mode")
+                print(f"[DEBUG] PANDAS_AVAILABLE={PANDAS_AVAILABLE}")
+            
+            if not PANDAS_AVAILABLE:
+                raise ImportError("pandas is required to read local parquet files. Install with: pip install pandas")
+            
+            from pathlib import Path
+            
+            # Try different file paths
+            possible_paths = [
+                Path(CURATED_DIR) / f"{table_name}.parquet",
+                Path(table_name),
+                Path(f"{table_name}.parquet")
+            ]
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] Searching for parquet file in paths:")
+                for p in possible_paths:
+                    print(f"[DEBUG]   - {p.absolute()} (exists: {p.exists()})")
+            
+            df = None
+            for path in possible_paths:
+                if path.exists():
+                    print(f"📊 Reading workspace list from: {path}")
+                    df = pd.read_parquet(path)
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] Loaded parquet file: {len(df)} rows, columns: {list(df.columns)}")
+                    break
+            
+            if df is None:
+                if DEBUG_MODE:
+                    print("[DEBUG] No parquet file found at any search path")
+                raise FileNotFoundError(f"Could not find workspace table at any of: {possible_paths}")
+            
+            # Filter personal workspaces if needed
+            if not include_personal and "workspace_type" in df.columns:
+                rows_before = len(df)
+                df = df[df["workspace_type"] != "PersonalGroup"]
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Filtered PersonalGroup: {rows_before} -> {len(df)} rows")
+            
+            # Validate required column exists
+            if "workspace_id" not in df.columns:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Required column 'workspace_id' not found. Available: {list(df.columns)}")
+                raise ValueError("Required column 'workspace_id' not found in parquet file")
+            
+            # Filter out null workspace_ids
+            rows_before = len(df)
+            df = df[df["workspace_id"].notna()]
+            if DEBUG_MODE and rows_before != len(df):
+                print(f"[DEBUG] Filtered out {rows_before - len(df)} rows with null workspace_id")
+            
+            # Convert to list of dicts
+            for _, row in df.iterrows():
+                ws_dict = {"id": row["workspace_id"]}
+                if "workspace_name" in df.columns:
+                    ws_dict["name"] = row["workspace_name"]
+                if "workspace_type" in df.columns:
+                    ws_dict["type"] = row["workspace_type"]
+                if "capacity_id" in df.columns:
+                    ws_dict["capacityId"] = row["capacity_id"]
+                workspaces.append(ws_dict)
+            
+            if not workspaces:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Parquet file returned 0 workspaces after conversion")
+                print(f"⚠️  File contains no workspaces")
+                print("   Falling back to API call...")
+                return None
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries")
+                print(f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}")
+            print(f"✅ Successfully loaded {len(workspaces)} workspaces from file")
+    
+    except Exception as e:
+        print(f"❌ Error reading workspace table '{table_name}': {e}")
+        print("   Falling back to API call...")
+        return None
+    
+    return workspaces
+
+
 def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
     # Auto-refresh token if close to expiry
     refresh_access_token()
@@ -1162,52 +1337,14 @@ def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
     _track_api_call()  # Track API usage
     
     try:
-        r = requests.get(url, headers=HEADERS, params=params)
+        r = requests.get(url, headers=HEADERS, params=params, timeout=30)
         r.raise_for_status()
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401:
             # Token expired, refresh and retry
             print("⚠️  Token expired, refreshing authentication...")
             refresh_access_token()
-            r = requests.get(url, headers=HEADERS, params=params)
-            r.raise_for_status()
-        else:
-            raise
-    
-    payload = r.json() or {}
-    
-    # Handle different response structures
-    if isinstance(payload, list):
-        workspaces = payload
-    elif isinstance(payload, dict):
-        workspaces = payload.get("workspaces", [])
-    else:
-        workspaces = []
-    
-    # Ensure all items are dicts
-    return [ws for ws in workspaces if isinstance(ws, dict)]
-
-
-def modified_workspace_ids(modified_since_iso: str, include_personal: bool = True) -> List[Dict[str, Any]]:
-    # Auto-refresh token if close to expiry
-    refresh_access_token()
-    
-    url = f"{PBI_ADMIN_BASE}/workspaces/modified"
-    params = {
-        "modifiedSince": modified_since_iso,
-        "excludePersonalWorkspaces": str(not include_personal).lower(),
-    }
-    _track_api_call()  # Track API usage
-    
-    try:
-        r = requests.get(url, headers=HEADERS, params=params)
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 401:
-            # Token expired, refresh and retry
-            print("⚠️  Token expired, refreshing authentication...")
-            refresh_access_token()
-            r = requests.get(url, headers=HEADERS, params=params)
+            r = requests.get(url, headers=HEADERS, params=params, timeout=30)
             r.raise_for_status()
         else:
             raise
@@ -1243,7 +1380,7 @@ def post_workspace_info(workspace_ids: List[str], max_retries: int = 3) -> str:
     for attempt in range(max_retries):
         try:
             _track_api_call()  # Track API usage
-            r = requests.post(url, headers=HEADERS, json=body)
+            r = requests.post(url, headers=HEADERS, json=body, timeout=30)
             r.raise_for_status()
             
             response_data = r.json() or {}
@@ -1292,7 +1429,7 @@ def poll_scan_status(scan_id: str) -> None:
         
         try:
             _track_api_call()  # Track API usage
-            r = requests.get(url, headers=HEADERS)
+            r = requests.get(url, headers=HEADERS, timeout=30)
             
             if r.status_code == 202:
                 if time.time() - start > SCAN_TIMEOUT_MINUTES * 60:
@@ -1337,7 +1474,7 @@ def read_scan_result(scan_id: str) -> Dict[str, Any]:
     for attempt in range(max_retries):
         try:
             _track_api_call()  # Track API usage
-            r = requests.get(url, headers=HEADERS)
+            r = requests.get(url, headers=HEADERS, timeout=30)
             r.raise_for_status()
             
             return r.json()
@@ -1458,6 +1595,7 @@ def get_scan_result_by_id(
             print(f"Overwrote data in {curated_dir}")
         
         # Register or refresh SQL table
+        _validate_sql_identifier(table_name, "table name")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         print(f"Registered table: {table_name}")
@@ -1588,9 +1726,16 @@ def _build_target(server, database, endpoint):
     return " | ".join(parts) if parts else None
 
 
+def _validate_sql_identifier(name: str, label: str = "identifier") -> None:
+    """Validate that a string is safe to use in a SQL statement (alphanumeric, underscores, dots only)."""
+    if not re.match(r'^[a-zA-Z0-9_\.]+$', name):
+        raise ValueError(f"Invalid {label} '{name}'. Only alphanumeric characters, underscores, and dots are allowed.")
+
+
 def _save_data(rows, curated_dir, table_name, mode="overwrite"):
     """Save data using Spark (Fabric) or pandas (local)."""
     if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
+        _validate_sql_identifier(table_name, "table name")
         # Use Spark
         df = spark.createDataFrame(rows)
         df = (
@@ -1771,7 +1916,7 @@ def get_activity_events(days_back: int = 30, activity_filter: str = None) -> Lis
                 params["continuationToken"] = continuation_token
             
             try:
-                r = requests.get(url, headers=HEADERS, params=params)
+                r = requests.get(url, headers=HEADERS, params=params, timeout=30)
                 r.raise_for_status()
                 data = r.json()
                 
@@ -2418,7 +2563,8 @@ def full_tenant_scan(include_personal: bool = True,
                      max_calls_per_hour: int = 450,
                      capacity_filter: List[str] = None,
                      exclude_capacities: List[str] = None,
-                     capacity_priority: List[str] = None) -> None:
+                     capacity_priority: List[str] = None,
+                     workspace_table_source: str = None) -> None:
     """
     Full tenant scan with optional capacity grouping and parallel scanning.
     
@@ -2432,8 +2578,25 @@ def full_tenant_scan(include_personal: bool = True,
         capacity_filter: Only scan these capacity IDs (e.g., ['cap-123', 'cap-456'])
         exclude_capacities: Skip these capacity IDs (e.g., ['shared'])
         capacity_priority: Process capacities in this order (rest follow)
+        workspace_table_source: Read workspace list from table instead of API (optional)
     """
-    ws_min = get_all_workspaces(include_personal=include_personal)
+    # Get workspace list from table or API
+    if workspace_table_source:
+        if DEBUG_MODE:
+            print(f"[DEBUG] full_tenant_scan: Using workspace table source '{workspace_table_source}'")
+        ws_min = read_workspaces_from_table(workspace_table_source, include_personal=include_personal)
+        if ws_min is None:
+            # Fallback to API if table read failed
+            if DEBUG_MODE:
+                print("[DEBUG] Table read failed, falling back to API workspace discovery")
+            ws_min = get_all_workspaces(include_personal=include_personal)
+        elif DEBUG_MODE:
+            print(f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source")
+    else:
+        if DEBUG_MODE:
+            print("[DEBUG] full_tenant_scan: Using API workspace discovery")
+        ws_min = get_all_workspaces(include_personal=include_personal)
+    
     if not ws_min:
         print("No workspaces discovered.")
         return
@@ -2543,15 +2706,15 @@ def full_tenant_scan(include_personal: bool = True,
 
         print(f"📦 Processing {len(batches)} batches...")
     
-    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
-        futures = [pool.submit(run_one_batch, b) for b in batches]
-        
-        # Progress bar if available
-        future_iterator = as_completed(futures)
-        if TQDM_AVAILABLE:
-            future_iterator = tqdm(as_completed(futures), total=len(futures), 
-                                  desc="Scanning batches", unit="batch")
-        
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
+            futures = [pool.submit(run_one_batch, b) for b in batches]
+            
+            # Progress bar if available
+            future_iterator = as_completed(futures)
+            if TQDM_AVAILABLE:
+                future_iterator = tqdm(as_completed(futures), total=len(futures), 
+                                      desc="Scanning batches", unit="batch")
+            
             for fut in future_iterator:
                 scan_payloads.append(fut.result())
 
@@ -2587,7 +2750,8 @@ def full_tenant_scan_chunked(include_personal: bool = True,
                               parallel_capacities: int = 1,
                               capacity_filter: List[str] = None,
                               exclude_capacities: List[str] = None,
-                              capacity_priority: List[str] = None) -> None:
+                              capacity_priority: List[str] = None,
+                              workspace_table_source: str = None) -> None:
     """
     Full tenant scan with automatic rate limit management for very large tenants.
     Processes workspaces in hourly chunks, respecting the 500 API calls/hour limit.
@@ -2606,6 +2770,7 @@ def full_tenant_scan_chunked(include_personal: bool = True,
         capacity_filter: Only scan these capacity IDs (e.g., ['cap-123', 'cap-456'])
         exclude_capacities: Skip these capacity IDs (e.g., ['shared'])
         capacity_priority: Process capacities in this order (rest follow)
+        workspace_table_source: Read workspace list from table instead of API (optional)
     """
     # Use global settings if not specified
     if enable_checkpointing is None:
@@ -2628,7 +2793,23 @@ def full_tenant_scan_chunked(include_personal: bool = True,
             start_chunk_idx = checkpoint.get('next_chunk_idx', 0)
             print(f"🔄 Resuming from checkpoint: {len(completed_batch_indices)} batches already completed")
     
-    ws_min = get_all_workspaces(include_personal=include_personal)
+    # Get workspace list from table or API
+    if workspace_table_source:
+        if DEBUG_MODE:
+            print(f"[DEBUG] full_tenant_scan_chunked: Using workspace table source '{workspace_table_source}'")
+        ws_min = read_workspaces_from_table(workspace_table_source, include_personal=include_personal)
+        if ws_min is None:
+            # Fallback to API if table read failed
+            if DEBUG_MODE:
+                print("[DEBUG] Table read failed, falling back to API workspace discovery")
+            ws_min = get_all_workspaces(include_personal=include_personal)
+        elif DEBUG_MODE:
+            print(f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source")
+    else:
+        if DEBUG_MODE:
+            print("[DEBUG] full_tenant_scan_chunked: Using API workspace discovery")
+        ws_min = get_all_workspaces(include_personal=include_personal)
+    
     if not ws_min:
         print("No workspaces discovered.")
         return
@@ -2750,6 +2931,7 @@ def full_tenant_scan_chunked(include_personal: bool = True,
                     print(f"💾 Saved {len(all_rows)} rows (initial write).")
                 
                 # Update SQL table
+                _validate_sql_identifier(table_name, "table name")
                 spark.sql(f"DROP TABLE IF EXISTS {table_name}")
                 spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
             else:
@@ -2926,8 +3108,6 @@ def incremental_update(modified_since_iso: str,
     
     print(f"\n📊 Scanning {len(workspaces_to_scan)} workspaces with changes...")
 
-    print(f"\n📊 Scanning {len(workspaces_to_scan)} workspaces with changes...")
-
     batches = [workspaces_to_scan[i:i+BATCH_SIZE_WORKSPACES] for i in range(0, len(workspaces_to_scan), BATCH_SIZE_WORKSPACES)]
     scan_payloads: List[Dict[str, Any]] = []
 
@@ -2997,6 +3177,7 @@ def incremental_update(modified_since_iso: str,
         except Exception:
             df_merged = df_new
         df_merged.write.mode("overwrite").parquet(curated_dir)
+        _validate_sql_identifier(table_name, "table name")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         row_count = df_merged.count()
@@ -3219,6 +3400,7 @@ def scan_json_directory_for_connections(
         # Write output
         df_merged.write.mode("overwrite").parquet(curated_dir)
         
+        _validate_sql_identifier(table_name, "table name")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         
@@ -3897,6 +4079,14 @@ Examples:
         help='Exclude personal workspaces from scan'
     )
     parser.add_argument(
+        '--workspace-table-source',
+        type=str,
+        metavar='TABLE_NAME',
+        help='Read workspace list from lakehouse table/parquet file instead of API. '
+             'Requires workspace_id column. Automatically falls back to API if read fails. '
+             'Example: workspace_inventory or ./my_workspaces.parquet'
+    )
+    parser.add_argument(
         '--table-name',
         type=str,
         default='tenant_cloud_connections',
@@ -4065,6 +4255,8 @@ Examples:
                 print(f"Max batches/hour: {args.max_batches_per_hour}")
                 if args.group_by_capacity:
                     print(f"Capacity grouping: ENABLED")
+                if args.workspace_table_source:
+                    print(f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)")
                 full_tenant_scan_chunked(
                     include_personal=include_personal,
                     max_batches_per_hour=args.max_batches_per_hour,
@@ -4076,12 +4268,15 @@ Examples:
                     parallel_capacities=args.parallel_capacities,
                     capacity_filter=capacity_filter,
                     exclude_capacities=exclude_capacities,
-                    capacity_priority=capacity_priority
+                    capacity_priority=capacity_priority,
+                    workspace_table_source=args.workspace_table_source
                 )
             else:
                 print(f"Mode: Standard (MAX_PARALLEL_SCANS={MAX_PARALLEL_SCANS})")
                 if args.group_by_capacity:
                     print(f"Capacity grouping: ENABLED")
+                if args.workspace_table_source:
+                    print(f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)")
                 full_tenant_scan(
                     include_personal=include_personal,
                     curated_dir=args.curated_dir,
@@ -4091,7 +4286,8 @@ Examples:
                     max_calls_per_hour=args.max_calls_per_hour,
                     capacity_filter=capacity_filter,
                     exclude_capacities=exclude_capacities,
-                    capacity_priority=capacity_priority
+                    capacity_priority=capacity_priority,
+                    workspace_table_source=args.workspace_table_source
                 )
         
         elif args.incremental:
