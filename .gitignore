@@ -227,3 +227,6 @@ test_*.parquet
 *_test.parquet
 test_data/
 test_validation.py
+
+.copilot-findings/
+Files/scanner/

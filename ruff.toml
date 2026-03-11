@@ -1,0 +1,10 @@
+# Exclude notebooks (cell-based imports are inherently non-top-level)
+extend-exclude = ["*.ipynb"]
+
+[lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # Line length — existing codebase has many long lines
+
+[lint.per-file-ignores]
+# Tests legitimately import after sys.path manipulation and mock setup
+"tests/**" = ["E402"]

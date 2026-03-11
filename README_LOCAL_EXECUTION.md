@@ -415,6 +415,7 @@ These are expected when running locally. The script handles them automatically.
 
 ### Authentication Errors
 
+- If you see `ValueError: Service Principal credentials not configured`, ensure the following environment variables are set to non-empty values: `FABRIC_SP_TENANT_ID`, `FABRIC_SP_CLIENT_ID`, `FABRIC_SP_CLIENT_SECRET`
 - Verify your service principal has correct API permissions
 - Check that the security group is enabled in Power BI Admin Portal
 - Ensure environment variables are set correctly

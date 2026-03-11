@@ -161,6 +161,10 @@ lakehouse:
   # Upload Authentication (Optional - for separate write permissions)
   # Allows principle of least privilege: read-only SPN for scanning, write-capable auth for uploads
   # NOTE: These settings override environment variables (UPLOAD_USE_USER_AUTH, UPLOAD_TENANT_ID, etc.)
+  #
+  # ⚠️ SECURITY WARNING: NEVER commit this file with real secrets filled in.
+  # Prefer environment variables (UPLOAD_CLIENT_SECRET, etc.) for credentials.
+  # This example file is gitignored, but copies you create may not be.
   
   # Option A: Use interactive user authentication for uploads (requires: pip install msal)
   # Best for: Manual scans where you want individual user accountability

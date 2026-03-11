@@ -6,9 +6,6 @@ requests>=2.31.0
 pandas>=2.0.0
 pyarrow>=14.0.0  # Required for parquet support in pandas
 
-# Retry logic and resilience (production-critical)
-tenacity>=8.2.0
-
 # Optional: Progress bars (highly recommended for long-running scans)
 tqdm>=4.66.0
 
