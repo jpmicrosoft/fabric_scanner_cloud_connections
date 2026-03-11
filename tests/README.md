@@ -1,11 +1,47 @@
 # Test Suite - Fabric Scanner Cloud Connections
 
-This directory contains comprehensive tests for the Fabric Scanner Cloud Connections project, covering all major features including capacity metadata (Phase 1), capacity grouping (Phase 2), parallel capacity scanning (Phase 3), and workspace table source (Phase 4).
+This directory contains comprehensive tests for the Fabric Scanner Cloud Connections project, covering all major features including capacity metadata, capacity grouping, parallel capacity scanning, workspace table source, and a full regression/coverage suite added by the pipeline.
+
+## Quick Start
+
+```powershell
+# Run all tests with pytest (recommended)
+cd C:\Users\jaiperez\Documents\Wells\Fabric_Work\fabric_scanner_cloud_connections
+pytest tests/ -v
+
+# Run a specific test file
+pytest tests/test_phase4_regression_and_coverage.py -v
+
+# Run a specific test class
+pytest tests/test_phase4_regression_and_coverage.py::TestValidatePathForSql -v
+
+# Run with coverage report
+pytest tests/ --cov=fabric_scanner_cloud_connections --cov-report=term-missing
+```
 
 ## Test Files
 
+### test_core_functions.py
+**Core Scanner Functions** — 10 tests
+
+Tests the fundamental scanning operations including full scans, incremental scans, scan ID retrieval, health checks, JSON processing, and CLI parsing.
+
+**Test Coverage:**
+- ✅ Health check — API availability and quota validation
+- ✅ Scan result retrieval — Get results by scan ID
+- ✅ Incremental scan filtering — Workspace modification time filtering
+- ✅ Hash optimization — Smart workspace filtering (80–90% reduction)
+- ✅ JSON directory scanning — Processing scanner API JSON files
+- ✅ Chunked scan calculations — Batch sizing for large tenants (247k workspaces)
+- ✅ Workspace batching — Correct batch chunk creation
+- ✅ Checkpoint functionality — Save/resume progress tracking
+- ✅ Personal workspace filtering — Include/exclude personal workspaces
+- ✅ CLI argument parsing — All scan modes (full, incremental, scan-id, chunked, health-check)
+
+---
+
 ### test_capacity_metadata.py
-**Phase 1: Capacity Metadata Validation**
+**Capacity Metadata Validation** — 5 tests
 
 Tests the capacity metadata extraction functionality that adds three columns to the scanner output:
 - `capacity_id`: Unique identifier for the capacity
@@ -17,27 +53,11 @@ Tests the capacity metadata extraction functionality that adds three columns to 
 - ✅ Dedicated vs shared capacity detection
 - ✅ Missing capacity field handling
 - ✅ Null value handling
-- ✅ All 5 test scenarios pass
-
-**Run this test:**
-```powershell
-cd tests
-python test_capacity_metadata.py
-```
-
-**Expected Output:**
-```
-TEST SUMMARY
-Total tests: 5
-Passed: 5
-Failed: 0
-Success rate: 100.0%
-```
 
 ---
 
 ### test_phase3_parallel_scanning.py
-**Phase 3: Parallel Capacity Scanning**
+**Parallel Capacity Scanning** — 10 tests
 
 Tests the parallel capacity scanning functionality that speeds up full tenant scans by scanning multiple capacities concurrently with thread-safe rate limiting.
 
@@ -53,25 +73,10 @@ Tests the parallel capacity scanning functionality that speeds up full tenant sc
 - ✅ Capacity grouping integration
 - ✅ Error handling (invalid capacity IDs)
 
-**Run this test:**
-```powershell
-cd tests
-python test_phase3_parallel_scanning.py
-```
-
-**Expected Output:**
-```
-TEST SUMMARY
-Total tests: 10
-Passed: 10
-Failed: 0
-Success rate: 100.0%
-```
-
 ---
 
 ### test_workspace_table_source.py
-**Phase 4: Workspace Table Source Validation**
+**Workspace Table Source Validation** — 7 tests
 
 Tests the workspace table source functionality that allows reading workspace lists from lakehouse tables or parquet files instead of API calls, with comprehensive security and data quality validation.
 
@@ -79,69 +84,69 @@ Tests the workspace table source functionality that allows reading workspace lis
 - ✅ Empty/whitespace table name rejection
 - ✅ SQL injection prevention (7 attack patterns)
 - ✅ Valid table name acceptance
-- ✅ Missing required column detection (Spark)
-- ✅ Null workspace_id filtering (Spark)
-- ✅ Missing required column detection (Pandas)
-- ✅ Null workspace_id filtering (Pandas)
+- ✅ Missing required column detection
+- ✅ Null workspace_id filtering
 - ✅ Empty table API fallback
-- ✅ File not found API fallback
 - ✅ Personal workspace filtering
-- ✅ All 10 test scenarios pass
-
-**Run this test:**
-```powershell
-cd tests
-python test_workspace_table_source.py
-```
-
-**Expected Output:**
-```
-TEST SUMMARY
-Total tests: 10
-Passed: 10
-Failed: 0
-Success rate: 100.0%
-```
 
 ---
 
-### test_core_functions.py
-**Core Scanner Functions**
+### test_phase4_regression_and_coverage.py *(NEW)*
+**Regression Tests & Coverage Gaps** — 63 tests across 10 classes
 
-Tests the fundamental scanning operations including full scans, incremental scans, scan ID retrieval, health checks, JSON processing, and CLI parsing.
+Added by the pipeline to cover all gaps identified during analysis: P0 bug regressions, security controls, refactored code, and previously untested functions.
 
-**Test Coverage:**
-- ✅ Health check - API availability and quota validation
-- ✅ Scan result retrieval - Get results by scan ID
-- ✅ Incremental scan filtering - Workspace modification time filtering
-- ✅ Hash optimization - Smart workspace filtering (80-90% reduction)
-- ✅ JSON directory scanning - Processing scanner API JSON files
-- ✅ Chunked scan calculations - Batch sizing for large tenants (247k workspaces)
-- ✅ Workspace batching - Correct batch chunk creation
-- ✅ Checkpoint functionality - Save/resume progress tracking
-- ✅ Personal workspace filtering - Include/exclude personal workspaces
-- ✅ CLI argument parsing - All scan modes (full, incremental, scan-id, chunked, health-check)
+#### P0 Regression Tests (9 tests)
+| Class | Tests | What's Covered |
+|---|---|---|
+| `TestGetAllWorkspacesModifiedSince` | 5 | `modified_since` param correctly wired to API `modifiedSince` query param; `None` omits the param; `include_personal` maps to `excludePersonalWorkspaces`; handles both list and dict API response formats |
+| `TestCredentialValidation` | 4 | Empty `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET` each raise `ValueError` with env var name; all-empty lists all missing vars |
 
-**Run this test:**
-```powershell
-cd tests
-python test_core_functions.py
-```
+#### Security Control Tests (20 tests)
+| Class | Tests | What's Covered |
+|---|---|---|
+| `TestValidatePathForSql` | 16 | Rejects: single quotes, double quotes, semicolons, backticks, backslashes, SQL keywords (DROP/SELECT/UNION case-insensitive), comment sequences (`--`, `/*`), empty/None. Accepts: Unix paths, ABFSS paths, hyphens, dots |
+| `TestValidateSqlIdentifier` | 10 | Rejects: semicolons, spaces, hyphens, at-symbols, quotes, path traversal. Accepts: simple names, dotted names, fully qualified, numeric suffixes |
 
-**Expected Output:**
-```
-TEST SUMMARY
-Total tests: 10
-Passed: 10
-Failed: 0
-Success rate: 100.0%
-```
+#### Refactored Code Tests (12 tests)
+| Class | Tests | What's Covered |
+|---|---|---|
+| `TestRunOneBatch` | 4 | Full mode includes capacity metadata in sidecar; incremental mode builds lighter sidecar; `run_one_batch_incremental()` backward-compatible wrapper; admin/member user extraction |
+| `TestBuildConnectionRow` | 5 | All 21 expected dict keys; `cloud` flag from `CLOUD_CONNECTORS` membership; `cloud` flag from `connection_scope="Cloud"`; on-prem scope yields `cloud=False`; `target` string combines server/database/endpoint |
+| `TestSaveDataMerge` | 3 | Merge mode deduplicates old+new rows on `_DEDUP_COLS`; merge works on first run (no existing data); connector column normalized to lowercase |
+
+#### Coverage Gap Tests (22 tests)
+| Class | Tests | What's Covered |
+|---|---|---|
+| `TestFlattenScanPayload` | 8 | SemanticModel with datasources; Dataflow with generation; Pipeline with activities; Lakehouse with connections+lineage; unknown item type fallback; non-dict payload; gateway scope; multi-workspace payload |
+| `TestGetHttpSession` | 3 | Returns `requests.Session` instance; returns same instance (singleton); 10-thread concurrency returns same instance |
+| `TestConnectionHashTrackerVectorized` | 5 | Vectorized `get_stored_hashes()` produces correct dict structure; result identical to old `iterrows()` approach (100-row equivalence); empty dir returns empty dict; `calculate_workspace_hash` deterministic regardless of input order; empty connections produces valid SHA256 |
 
 ---
 
 ## Running All Tests
 
-Run all tests sequentially:
+### With pytest (Recommended)
+
+```powershell
+# From project root — runs all tests with coverage
+pytest
+
+# Verbose output
+pytest -v
+
+# Stop on first failure
+pytest -x
+
+# Run only tests matching a keyword
+pytest -k "security" -v
+pytest -k "hash" -v
+pytest -k "batch" -v
+```
+
+### Legacy Test Runners
+
+The older test files (`test_capacity_metadata.py`, `test_phase3_parallel_scanning.py`, `test_workspace_table_source.py`, `test_core_functions.py`) also support direct execution:
 
 ```powershell
 cd tests
@@ -149,18 +154,6 @@ python test_capacity_metadata.py
 python test_phase3_parallel_scanning.py
 python test_workspace_table_source.py
 python test_core_functions.py
-```
-
-Or create a simple test runner:
-
-```powershell
-# Run all tests and summarize results
-Get-ChildItem *.py | Where-Object { $_.Name -like "test_*.py" } | ForEach-Object {
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "Running: $($_.Name)" -ForegroundColor Cyan
-    Write-Host "========================================" -ForegroundColor Cyan
-    python $_.Name
-}
 ```
 
 ---
@@ -214,17 +207,16 @@ def test_feature():
 **A:** No. The tests use mock objects and don't make actual API calls. Authentication globals (`HEADERS` and `ACCESS_TOKEN`) are set to mock values in each test file, so no real authentication is attempted.
 
 ### Q: How long do the tests take to run?
-**A:** All 35 tests (across 4 files) complete in **under 5 seconds** since they use mocks instead of real API calls.
+**A:** All 95 tests complete in **under 10 seconds** since they use mocks instead of real API calls.
 
 ### Q: Can I run tests from the main project directory?
-**A:** Yes, but it's recommended to run from the `tests/` directory:
+**A:** Yes, and this is the recommended approach when using pytest:
 ```powershell
-# From project root
-python tests/test_capacity_metadata.py
+# From project root (recommended — uses pytest.ini settings)
+pytest tests/ -v
 
-# Better: From tests directory
-cd tests
-python test_capacity_metadata.py
+# Or run a specific file
+pytest tests/test_core_functions.py -v
 ```
 
 ### Q: What if a test fails?
@@ -233,45 +225,20 @@ python test_capacity_metadata.py
 2. **Test name**: Identifies which feature is broken
 3. **Recent changes**: Review recent code modifications to `fabric_scanner_cloud_connections.py`
 
-Example failure output:
-```
-✗ FAIL: test_quota_distribution
-   Error: Each worker should get 150 calls, got 100
-```
-
 ### Q: Do the tests cover Phase 2 (capacity grouping)?
 **A:** Yes. Phase 2 functionality is validated in `test_phase3_parallel_scanning.py` (Test 9: Capacity Grouping Integration), which tests that workspaces are correctly grouped by capacity.
 
 ### Q: Can I add new tests?
-**A:** Absolutely! Follow the existing pattern:
+**A:** Absolutely! For new pytest-style tests, add them to `test_phase4_regression_and_coverage.py` or create a new `test_*.py` file:
 ```python
-def test_new_feature():
-    """Test X: Description of what you're testing"""
-    print("\n" + "="*70)
-    print("TEST X: Feature Name")
-    print("="*70)
-    
-    # Your test logic here
-    
-    assert condition, "Failure message"
-    print(f"✓ PASS: Feature works correctly")
-```
+class TestNewFeature:
+    def test_basic_case(self):
+        result = scanner.my_function("input")
+        assert result == expected, "Failure message"
 
-### Q: Why don't you use pytest?
-**A:** These tests use simple assertions for:
-- ✅ **No dependencies**: Works without installing pytest
-- ✅ **Simplicity**: Easy to understand and modify
-- ✅ **Portability**: Run anywhere with just Python
-- ✅ **Clear output**: Custom formatting for better readability
-
-### Q: How do I debug a failing test?
-**A:** Add print statements or use Python's debugger:
-```python
-# Add debug output
-print(f"DEBUG: Variable value = {some_var}")
-
-# Or use pdb
-import pdb; pdb.set_trace()
+    def test_edge_case(self):
+        with pytest.raises(ValueError, match="expected error"):
+            scanner.my_function(None)
 ```
 
 ### Q: Are these unit tests or integration tests?
@@ -304,31 +271,7 @@ import pdb; pdb.set_trace()
 - ✅ Before releasing to production
 
 ### Q: Can tests be run in CI/CD?
-**A:** Yes! Since they don't require authentication or API access, they're perfect for CI/CD. The project includes a GitHub Actions workflow (`.github/workflows/ci-tests.yml`) that automatically runs all tests on Python 3.8-3.12 for every push and pull request.
-
-**Manual CI/CD setup:**
-```yaml
-# Example GitHub Actions
-- name: Install dependencies
-  run: |
-    pip install -r requirements.txt
-    pip install pytest pytest-mock
-
-- name: Run Tests
-  run: |
-    pytest tests/ -v
-```
-
-**See:** [CI Tests Workflow](../.github/workflows/ci-tests.yml) for the complete configuration.
-
-### Q: What's the coverage of the test suite?
-**A:** Current coverage:
-- ✅ **Phase 1** (Capacity Metadata): 5 tests - 100% coverage
-- ✅ **Phase 2** (Capacity Grouping): Validated in Phase 3 tests
-- ✅ **Phase 3** (Parallel Scanning): 10 tests - 100% coverage
-- ✅ **Phase 4** (Workspace Table Source): 10 tests - 100% coverage
-- ✅ **Core Functions**: 10 tests covering scanning, checkpoints, CLI
-- ✅ **Total**: 35 tests, 100% pass rate
+**A:** Yes! Since they don't require authentication or API access, they're perfect for CI/CD. The project includes a GitHub Actions workflow (`.github/workflows/ci-tests.yml`) that automatically runs all tests on Python 3.8–3.12 for every push and pull request.
 
 ### Q: Why are there warnings about datetime.utcnow()?
 **A:** This is a Python 3.12+ deprecation warning. It's informational only and doesn't affect test results. To fix, update to:
@@ -341,11 +284,14 @@ from datetime import datetime, timezone
 now = datetime.now(timezone.utc)
 ```
 
-### Q: What if I see "module X does not have attribute Y" errors?
-**A:** This means the test is trying to mock a function that doesn't exist. Check:
-1. Function name matches exactly (case-sensitive)
-2. Function exists in `fabric_scanner_cloud_connections.py`
-3. Import path is correct
+### Q: What's the coverage of the test suite?
+**A:** Current coverage:
+- ✅ **Core Functions**: 10 tests — scanning, checkpoints, CLI
+- ✅ **Capacity Metadata**: 5 tests — metadata extraction
+- ✅ **Parallel Scanning**: 10 tests — thread-safe rate limiting, capacity grouping
+- ✅ **Workspace Table Source**: 7 tests — table reading, SQL injection prevention
+- ✅ **Regression & Coverage** (Phase 4): 63 tests — P0 bugs, security, refactored code, coverage gaps
+- ✅ **Total**: **95 tests, 100% pass rate**
 
 ---
 
@@ -357,7 +303,7 @@ When adding new features to `fabric_scanner_cloud_connections.py`:
 1. **Create test function** in appropriate test file
 2. **Use mocks** to simulate API responses
 3. **Validate logic** with assertions
-4. **Print results** for visibility
+4. **Run all tests** to check for regressions
 5. **Update this README** with new test details
 
 ### Updating Tests
@@ -368,14 +314,6 @@ When modifying existing features:
 3. **Run all tests** to check for regressions
 4. **Update documentation** if test changes
 
-### Deprecating Tests
-If a feature is removed:
-
-1. **Delete the test function**
-2. **Update test count** in file header
-3. **Update this README**
-4. **Document in commit message**
-
 ---
 
 ## Success Criteria
@@ -383,42 +321,20 @@ If a feature is removed:
 All tests should show **100% pass rate**:
 
 ```
-✓ test_capacity_metadata.py: 5/5 passed (100%)
-✓ test_phase3_parallel_scanning.py: 10/10 passed (100%)
-✓ test_workspace_table_source.py: 10/10 passed (100%)
-✓ test_core_functions.py: 10/10 passed (100%)
+✓ test_core_functions.py: 10 tests
+✓ test_capacity_metadata.py: 5 tests
+✓ test_phase3_parallel_scanning.py: 10 tests
+✓ test_workspace_table_source.py: 7 tests
+✓ test_phase4_regression_and_coverage.py: 63 tests
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Total: 35/35 tests passed (100%)
+Total: 95 tests passed (100%)
 ```
 
 Any failures indicate a regression that should be investigated immediately.
 
 ---
 
-## Contributing
-
-To contribute new tests:
-
-1. Follow the existing pattern (mock-based, clear output)
-2. Test one feature per function
-3. Include descriptive print statements
-4. Add assertions with clear failure messages
-5. Update this README with new test documentation
-6. Ensure 100% pass rate before committing
-
----
-
-## Support
-
-For questions about the tests:
-1. Review this README and FAQ first
-2. Check test file comments for implementation details
-3. Review `../README.md` for feature documentation
-4. Examine existing tests for patterns
-
----
-
-**Last Updated:** January 2026  
-**Test Suite Version:** 1.1  
-**Total Tests:** 35  
+**Last Updated:** July 2025
+**Test Suite Version:** 2.0
+**Total Tests:** 95
 **Pass Rate:** 100%

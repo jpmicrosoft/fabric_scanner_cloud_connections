@@ -89,15 +89,16 @@ if health['safe_to_proceed']:
 health = check_scanner_api_health()
 
 if health['status'] == 'clear':
-    # Temporarily increase parallelism
-    # Edit line 135: MAX_PARALLEL_SCANS = 3
+    # Temporarily increase parallelism via config file or CLI:
+    #   Config: max_parallel_scans: 3  (in scanner_config.yaml)
+    #   CLI:    --parallel-capacities 3
     
     run_cloud_connection_scan(
         enable_full_scan=True,
         include_personal=True
     )
     
-    # Remember to change back to 1 afterwards!
+    # Remember to restore conservative settings afterwards!
 ```
 
 **Duration:** ~55 hours (~2 days) with `MAX_PARALLEL_SCANS=3`  

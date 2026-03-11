@@ -113,7 +113,7 @@ run_cloud_connection_scan(
 
 ```python
 # Inside fabric_scanner_cloud_connections.py
-# The ConnectionHashTracker class (lines 692-892) handles:
+# The ConnectionHashTracker class handles:
 
 # 1. Calculate hashes for workspace connections
 hashes = hash_tracker.calculate_workspace_hashes(workspace_connections)
@@ -253,7 +253,7 @@ The hash is based on these connection fields:
 }
 ```
 
-To modify what's included in the hash, edit the `ConnectionHashTracker` class in `fabric_scanner_cloud_connections.py` (lines 692-892):
+To modify what's included in the hash, edit the `ConnectionHashTracker` class in `fabric_scanner_cloud_connections.py`:
 
 ```python
 def calculate_workspace_hash(self, connections: List[Dict]) -> str:
@@ -288,7 +288,7 @@ To change this threshold, search for `enable_hash_optimization and len(changed_w
 
 ### **Integrated Design**
 
-The `ConnectionHashTracker` class (lines 692-892 in `fabric_scanner_cloud_connections.py`) provides:
+The `ConnectionHashTracker` class in `fabric_scanner_cloud_connections.py` provides:
 
 - **Hash Calculation**: SHA256 hashing of normalized connection data
 - **Storage Management**: Automatic save/load from Spark tables (Fabric) or parquet files (local)

@@ -58,6 +58,7 @@
     "lakehouse_id": "",
     "upload_path": "Files/scanner",
     "_upload_auth_comment": "Upload authentication - allows separate credentials for writes (principle of least privilege)",
+    "_security_warning": "⚠️ NEVER commit this file with real secrets. Use environment variables for credentials. This file is gitignored but copies may not be.",
     "upload_use_user_auth": false,
     "upload_tenant_id": "",
     "upload_client_id": "",

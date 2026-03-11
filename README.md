@@ -322,7 +322,7 @@ LAKEHOUSE_UPLOAD_PATH = "Files/scanner"  # Path within lakehouse (optional, defa
 
 4. **Run the script:**
    ```bash
-   python fabric_scanner_cloud_connections_notebook.py
+   python fabric_scanner_cloud_connections.py
    ```
 
 See [`README_LOCAL_EXECUTION.md`](README_LOCAL_EXECUTION.md) for detailed local execution instructions.
@@ -1059,10 +1059,10 @@ The script **tracks API usage locally** (not from Microsoft APIs) to help you av
 ```
 
 **API calls per scan:**
-- `modified_workspace_ids()` - 1 call (same regardless of lookback period)
+- `get_all_workspaces(modified_since=...)` - 1 call (same regardless of lookback period)
 - `post_workspace_info()` - 1 call per 100 workspaces
-- `get_scan_status()` - 1 call per batch
-- `get_scan_result()` - 1 call per batch
+- `poll_scan_status()` - ~6 calls per batch (polls every 20 seconds)
+- `read_scan_result()` - 1 call per batch
 
 **Rule of thumb**: ~5-6 API calls per 100 modified workspaces
 
@@ -2166,8 +2166,13 @@ The script includes the following security measures:
 |---|---|
 | **HTTP Request Timeouts** | All HTTP requests enforce a 30-second timeout (120s for file uploads) to prevent indefinite hangs from network issues or unresponsive endpoints. |
 | **SQL Identifier Validation** | Table names used in Spark SQL statements are validated against `^[a-zA-Z0-9_\.]+$` to prevent SQL injection. Invalid names raise a `ValueError`. |
+| **SQL Path Validation** | File paths interpolated into Spark SQL LOCATION clauses are validated by `_validate_path_for_sql()`, which rejects single quotes, semicolons, backticks, SQL keywords, and comment sequences. |
+| **Thread-safe Token Cache** | Token cache reads/writes are protected by `_token_cache_lock` (`threading.Lock`) to prevent race conditions across parallel workers. HTTP requests execute outside the lock. |
 | **Thread-safe API Tracking** | The API call counter uses a `threading.Lock` to prevent race conditions when parallel workers update quota statistics concurrently. |
+| **Credential Validation** | `get_access_token_spn()` validates that `TENANT_ID`, `CLIENT_ID`, and `CLIENT_SECRET` are non-empty before use, raising a `ValueError` that lists missing env vars. |
+| **Connection Pooling** | A shared `requests.Session` (via `_get_http_session()`) reuses TCP/TLS connections across API calls, reducing latency and preventing connection leaks. |
 | **Token Caching with Expiry** | Access tokens are cached with a 5-minute pre-expiry buffer and auto-refreshed, avoiding unnecessary credential round-trips. |
+| **Debug Output Truncation** | Response bodies are capped at 200 characters in debug/error messages to prevent leaking internal URLs, correlation IDs, or tenant metadata. |
 | **No Credential Logging** | Secrets and tokens are never printed to console or written to log files. |
 
 **Q: What permissions does the Service Principal need? (Principle of Least Privilege)**

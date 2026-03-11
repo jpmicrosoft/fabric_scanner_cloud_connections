@@ -1,4 +1,3 @@
-
 # Microsoft Fabric — Scanner API Cloud Connections Inventory (PySpark Notebook)
 # Full tenant scan + Incremental scan (includes Personal workspaces)
 # Auth: Delegated Fabric Admin (default) or Service Principal
@@ -23,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Load .env file for local execution
 try:
     from dotenv import load_dotenv
+
     load_dotenv()  # Load environment variables from .env file
 except ImportError:
     pass  # python-dotenv not installed, skip
@@ -30,6 +30,7 @@ except ImportError:
 # Progress bars
 try:
     from tqdm import tqdm
+
     TQDM_AVAILABLE = True
 except ImportError:
     TQDM_AVAILABLE = False
@@ -38,6 +39,7 @@ except ImportError:
 # MSAL for user authentication (optional)
 try:
     from msal import PublicClientApplication
+
     MSAL_AVAILABLE = True
 except ImportError:
     MSAL_AVAILABLE = False
@@ -46,6 +48,7 @@ except ImportError:
 # Config file support (YAML)
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -55,6 +58,7 @@ except ImportError:
 try:
     from pyspark.sql import Row, SparkSession
     import pyspark.sql.functions as F
+
     SPARK_AVAILABLE = True
     try:
         spark = SparkSession.builder.getOrCreate()
@@ -79,6 +83,7 @@ except ImportError:
 # Import pandas for local execution
 try:
     import pandas as pd
+
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -89,7 +94,9 @@ RUNNING_IN_FABRIC = mssparkutils is not None and SPARK_AVAILABLE
 
 # --- Configuration ---
 # Configuration File (optional)
-CONFIG_FILE = os.getenv("SCANNER_CONFIG_FILE", "scanner_config.yaml")  # Path to config file
+CONFIG_FILE = os.getenv(
+    "SCANNER_CONFIG_FILE", "scanner_config.yaml"
+)  # Path to config file
 
 # Authentication Mode:
 #   "spn"         -> Service Principal (app registration with client secret)
@@ -99,43 +106,61 @@ AUTH_MODE = "spn"  # Default: Service Principal (recommended for automation)
 
 # --- Checkpoint/Resume Configuration ---
 ENABLE_CHECKPOINTING = True  # Set to True to enable checkpoint/resume for large scans
-CHECKPOINT_STORAGE = "json"  # "json" for local file, "lakehouse" for Fabric lakehouse storage
+CHECKPOINT_STORAGE = (
+    "json"  # "json" for local file, "lakehouse" for Fabric lakehouse storage
+)
 CHECKPOINT_INTERVAL = 100  # Save checkpoint every N batches
-CHECKPOINT_DIR = "checkpoints"  # Directory for checkpoint files (local or lakehouse path)
+CHECKPOINT_DIR = (
+    "checkpoints"  # Directory for checkpoint files (local or lakehouse path)
+)
 
-DEBUG_MODE = False     # Set to True for detailed JSON structure logging
+DEBUG_MODE = False  # Set to True for detailed JSON structure logging
 JSON_SINGLE_FILE_MODE = False  # Set to True to process only one specific JSON file
 JSON_TARGET_FILE = "Files/scanner/raw/scan_result_20241208.json"  # Target file when JSON_SINGLE_FILE_MODE is True
 
 # --- Local Execution: Upload to Lakehouse (Optional) ---
-UPLOAD_TO_LAKEHOUSE = False  # Set to True to upload results to Fabric Lakehouse when running locally
-LAKEHOUSE_WORKSPACE_ID = os.getenv("LAKEHOUSE_WORKSPACE_ID", "")  # Workspace ID containing the lakehouse
+UPLOAD_TO_LAKEHOUSE = (
+    False  # Set to True to upload results to Fabric Lakehouse when running locally
+)
+LAKEHOUSE_WORKSPACE_ID = os.getenv(
+    "LAKEHOUSE_WORKSPACE_ID", ""
+)  # Workspace ID containing the lakehouse
 LAKEHOUSE_ID = os.getenv("LAKEHOUSE_ID", "")  # Lakehouse ID to upload to
 LAKEHOUSE_UPLOAD_PATH = "Files/scanner"  # Path within lakehouse to upload files
 
 # --- Upload Authentication (Optional - for separate write permissions) ---
 # If set, uses separate credentials for lakehouse uploads (allows read-only scanning SPN + write-capable upload SPN/user)
 # If not set, falls back to main FABRIC_SP_* credentials
-UPLOAD_TENANT_ID = os.getenv("UPLOAD_TENANT_ID", "")  # Tenant ID for upload authentication (optional)
-UPLOAD_CLIENT_ID = os.getenv("UPLOAD_CLIENT_ID", "")  # Client ID for upload SPN (optional)
-UPLOAD_CLIENT_SECRET = os.getenv("UPLOAD_CLIENT_SECRET", "")  # Client secret for upload SPN (optional)
-UPLOAD_USE_USER_AUTH = os.getenv("UPLOAD_USE_USER_AUTH", "").lower() == "true"  # Use interactive user auth for uploads (optional)
+UPLOAD_TENANT_ID = os.getenv(
+    "UPLOAD_TENANT_ID", ""
+)  # Tenant ID for upload authentication (optional)
+UPLOAD_CLIENT_ID = os.getenv(
+    "UPLOAD_CLIENT_ID", ""
+)  # Client ID for upload SPN (optional)
+UPLOAD_CLIENT_SECRET = os.getenv(
+    "UPLOAD_CLIENT_SECRET", ""
+)  # Client secret for upload SPN (optional)
+UPLOAD_USE_USER_AUTH = (
+    os.getenv("UPLOAD_USE_USER_AUTH", "").lower() == "true"
+)  # Use interactive user auth for uploads (optional)
 
 # --- Activity Event Analysis (Inbound Connection Detection) ---
-ENABLE_ACTIVITY_ANALYSIS = False  # Set to True to analyze inbound connections via Activity Event API
+ENABLE_ACTIVITY_ANALYSIS = (
+    False  # Set to True to analyze inbound connections via Activity Event API
+)
 ACTIVITY_DAYS_BACK = 30  # Number of days of activity events to analyze
 
 # --- Service Principal secrets (override or use env/Key Vault) ---
-TENANT_ID      = os.getenv("FABRIC_SP_TENANT_ID", "<YOUR_TENANT_ID>")
-CLIENT_ID      = os.getenv("FABRIC_SP_CLIENT_ID", "<YOUR_APP_CLIENT_ID>")
-CLIENT_SECRET  = os.getenv("FABRIC_SP_CLIENT_SECRET", "<YOUR_APP_CLIENT_SECRET>")
+TENANT_ID = os.getenv("FABRIC_SP_TENANT_ID", "")
+CLIENT_ID = os.getenv("FABRIC_SP_CLIENT_ID", "")
+CLIENT_SECRET = os.getenv("FABRIC_SP_CLIENT_SECRET", "")
 
 
-AUTH_URL       = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
-FABRIC_SCOPE   = "https://analysis.windows.net/powerbi/api/.default"
+AUTH_URL = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+FABRIC_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 PBI_ADMIN_BASE = "https://api.powerbi.com/v1.0/myorg/admin"
 
-BATCH_SIZE_WORKSPACES  = 100  # Max allowed by Scanner API
+BATCH_SIZE_WORKSPACES = 100  # Max allowed by Scanner API
 
 # MAX_PARALLEL_SCANS: Controls how many batches scan simultaneously
 # API Call Implications:
@@ -166,7 +191,7 @@ BATCH_SIZE_WORKSPACES  = 100  # Max allowed by Scanner API
 #
 # MULTIPLE SCANNER API PROCESSES (quota sharing):
 #   If N processes are using Scanner API, divide 500 calls/hour by N:
-#   
+#
 #   Processes | Calls Each | Batches/Hr | MAX_PARALLEL_SCANS | Workspaces/Hr
 #   ----------|------------|------------|-------------------|---------------
 #      1      |    500     |    ~62     |        5-8        |   ~5,200-6,200
@@ -199,17 +224,19 @@ BATCH_SIZE_WORKSPACES  = 100  # Max allowed by Scanner API
 #    health = check_scanner_api_health()
 #    if health['safe_to_proceed'] and health['status'] == 'clear':
 #        MAX_PARALLEL_SCANS = 3  # Can safely increase if no contention
-MAX_PARALLEL_SCANS     = 1  # Ultra-conservative for 247k workspace shared tenant (20% quota)
+MAX_PARALLEL_SCANS = (
+    1  # Ultra-conservative for 247k workspace shared tenant (20% quota)
+)
 
-POLL_INTERVAL_SECONDS  = 20   # Scans typically complete in 2-3 minutes
-                               # Lower = faster detection but more API calls
-                               # 15 sec = +33% API calls, 30 sec = -25% API calls
-SCAN_TIMEOUT_MINUTES   = 30
+POLL_INTERVAL_SECONDS = 20  # Scans typically complete in 2-3 minutes
+# Lower = faster detection but more API calls
+# 15 sec = +33% API calls, 30 sec = -25% API calls
+SCAN_TIMEOUT_MINUTES = 30
 
 # Paths - adapt based on environment
 if RUNNING_IN_FABRIC:
     # Spark-relative paths (no lakehouse:// prefix needed for Spark operations)
-    RAW_DIR     = "Files/scanner/raw"
+    RAW_DIR = "Files/scanner/raw"
     CURATED_DIR = "Tables/dbo"
 else:
     # Local filesystem paths
@@ -219,6 +246,7 @@ else:
     # Create directories if they don't exist
     Path(RAW_DIR).mkdir(parents=True, exist_ok=True)
     Path(CURATED_DIR).mkdir(parents=True, exist_ok=True)
+
 
 # Helper function to convert Spark paths to mssparkutils paths
 def _to_lakehouse_path(spark_path: str) -> str:
@@ -234,8 +262,11 @@ def _to_lakehouse_path(spark_path: str) -> str:
     # For Tables/ paths, they're managed tables and don't need filesystem operations
     return f"file:/lakehouse/default/{spark_path}"
 
+
 if RUNNING_IN_FABRIC and mssparkutils is not None:
-    for path in [RAW_DIR]:  # Only create Files/ directories, Tables are managed by Spark
+    for path in [
+        RAW_DIR
+    ]:  # Only create Files/ directories, Tables are managed by Spark
         try:
             lakehouse_path = _to_lakehouse_path(path)
             mssparkutils.fs.mkdirs(lakehouse_path)
@@ -243,175 +274,225 @@ if RUNNING_IN_FABRIC and mssparkutils is not None:
             pass
 
 CLOUD_CONNECTORS = {
-    "azuresqldatabase", "sqlserverless", "synapse", "kusto",
-    "onelake", "adls", "abfss", "s3", "rest",
-    "sharepointonline", "dynamics365", "salesforce", "snowflake",
-    "fabriclakehouse"
+    "azuresqldatabase",
+    "sqlserverless",
+    "synapse",
+    "kusto",
+    "onelake",
+    "adls",
+    "abfss",
+    "s3",
+    "rest",
+    "sharepointonline",
+    "dynamics365",
+    "salesforce",
+    "snowflake",
+    "fabriclakehouse",
 }
+
+# --- HTTP Session (connection pooling for API calls) ---
+_http_session: Optional[requests.Session] = None
+_http_session_lock = threading.Lock()
+
+
+def _get_http_session() -> requests.Session:
+    """Return a shared requests.Session for HTTP connection reuse (thread-safe lazy init)."""
+    global _http_session
+    if _http_session is None:
+        with _http_session_lock:
+            if _http_session is None:
+                _http_session = requests.Session()
+    return _http_session
+
 
 # --- API Call Tracking (for quota monitoring) ---
 _api_call_lock = threading.Lock()
-API_CALL_COUNTER = {
-    'count': 0,
-    'start_time': None,
-    'last_reset': None
-}
+API_CALL_COUNTER = {"count": 0, "start_time": None, "last_reset": None}
+
 
 def _track_api_call():
     """Internal: Track API calls for quota monitoring (thread-safe)."""
     global API_CALL_COUNTER
     with _api_call_lock:
-        if API_CALL_COUNTER['start_time'] is None:
-            API_CALL_COUNTER['start_time'] = time.time()
-            API_CALL_COUNTER['last_reset'] = time.time()
-        
-        API_CALL_COUNTER['count'] += 1
-        
+        if API_CALL_COUNTER["start_time"] is None:
+            API_CALL_COUNTER["start_time"] = time.time()
+            API_CALL_COUNTER["last_reset"] = time.time()
+
+        API_CALL_COUNTER["count"] += 1
+
         # Auto-reset counter every hour
-        elapsed = time.time() - API_CALL_COUNTER['last_reset']
+        elapsed = time.time() - API_CALL_COUNTER["last_reset"]
         if elapsed >= 3600:
-            API_CALL_COUNTER['count'] = 1
-            API_CALL_COUNTER['last_reset'] = time.time()
+            API_CALL_COUNTER["count"] = 1
+            API_CALL_COUNTER["last_reset"] = time.time()
+
 
 def get_api_call_stats() -> dict:
     """Get current API call statistics."""
     with _api_call_lock:
-        if API_CALL_COUNTER['start_time'] is None:
-            return {'calls': 0, 'elapsed_minutes': 0, 'rate_per_hour': 0}
-        
-        elapsed = time.time() - API_CALL_COUNTER['start_time']
+        if API_CALL_COUNTER["start_time"] is None:
+            return {"calls": 0, "elapsed_minutes": 0, "rate_per_hour": 0}
+
+        elapsed = time.time() - API_CALL_COUNTER["start_time"]
         elapsed_minutes = elapsed / 60
-        rate_per_hour = (API_CALL_COUNTER['count'] / elapsed) * 3600 if elapsed > 0 else 0
-        
+        rate_per_hour = (
+            (API_CALL_COUNTER["count"] / elapsed) * 3600 if elapsed > 0 else 0
+        )
+
         return {
-            'calls': API_CALL_COUNTER['count'],
-            'elapsed_minutes': elapsed_minutes,
-            'rate_per_hour': rate_per_hour,
-            'percentage_used': (rate_per_hour / 500) * 100 if rate_per_hour > 0 else 0
+            "calls": API_CALL_COUNTER["count"],
+            "elapsed_minutes": elapsed_minutes,
+            "rate_per_hour": rate_per_hour,
+            "percentage_used": (rate_per_hour / 500) * 100 if rate_per_hour > 0 else 0,
         }
+
 
 def print_api_call_stats():
     """Print current API usage statistics."""
     stats = get_api_call_stats()
-    if stats['calls'] == 0:
+    if stats["calls"] == 0:
         print("\n📊 API Usage: No calls tracked yet")
         return
-    
-    print(f"\n📊 API Usage Statistics:")
+
+    print("\n📊 API Usage Statistics:")
     print(f"   Calls made: {stats['calls']}")
     print(f"   Elapsed time: {stats['elapsed_minutes']:.1f} minutes")
-    print(f"   Projected rate: {stats['rate_per_hour']:.0f} calls/hour ({stats['percentage_used']:.1f}% of 500/hour tenant-wide limit)")
-    
-    if stats['rate_per_hour'] > 450:
-        print(f"   ⚠️  WARNING: Approaching rate limit! Longer lookback periods may be throttled.")
-        print(f"   💡 TIP: Use shorter incremental windows (--hours 3) instead of longer periods (--hours 6+)")
-    elif stats['rate_per_hour'] > 350:
-        print(f"   ⚠️  Moderate usage - {500 - stats['rate_per_hour']:.0f} calls/hour capacity remaining")
-        print(f"   💡 Consider running during off-peak hours if scanning frequently")
+    print(
+        f"   Projected rate: {stats['rate_per_hour']:.0f} calls/hour ({stats['percentage_used']:.1f}% of 500/hour tenant-wide limit)"
+    )
+
+    if stats["rate_per_hour"] > 450:
+        print(
+            "   ⚠️  WARNING: Approaching rate limit! Longer lookback periods may be throttled."
+        )
+        print(
+            "   💡 TIP: Use shorter incremental windows (--hours 3) instead of longer periods (--hours 6+)"
+        )
+    elif stats["rate_per_hour"] > 350:
+        print(
+            f"   ⚠️  Moderate usage - {500 - stats['rate_per_hour']:.0f} calls/hour capacity remaining"
+        )
+        print("   💡 Consider running during off-peak hours if scanning frequently")
     else:
-        print(f"   ✅ Healthy rate - {500 - stats['rate_per_hour']:.0f} calls/hour available for other users/processes")
+        print(
+            f"   ✅ Healthy rate - {500 - stats['rate_per_hour']:.0f} calls/hour available for other users/processes"
+        )
+
 
 # --- Configuration File Loading ---
+
 
 def load_config_file(config_path: str = None) -> dict:
     """
     Load configuration from YAML or JSON file.
-    
+
     Args:
         config_path: Path to config file (defaults to CONFIG_FILE global)
-    
+
     Returns:
         Dictionary of configuration settings
     """
     if config_path is None:
         config_path = CONFIG_FILE
-    
+
     if not os.path.exists(config_path):
         print(f"ℹ️  Config file not found: {config_path} (using defaults)")
         return {}
-    
+
     try:
-        with open(config_path, 'r') as f:
-            if config_path.endswith('.yaml') or config_path.endswith('.yml'):
+        with open(config_path, "r") as f:
+            if config_path.endswith(".yaml") or config_path.endswith(".yml"):
                 if not YAML_AVAILABLE:
-                    print(f"⚠️  PyYAML not installed. Install with: pip install pyyaml")
+                    print("⚠️  PyYAML not installed. Install with: pip install pyyaml")
                     return {}
                 config = yaml.safe_load(f)
-            elif config_path.endswith('.json'):
+            elif config_path.endswith(".json"):
                 config = json.load(f)
             else:
                 print(f"⚠️  Unsupported config file format: {config_path}")
                 return {}
-        
+
         print(f"✅ Loaded configuration from: {config_path}")
         return config or {}
     except Exception as e:
         print(f"⚠️  Error loading config file: {e}")
         return {}
 
+
 def apply_config(config: dict):
     """
     Apply configuration settings to global variables.
-    
+
     Args:
         config: Configuration dictionary
     """
     global MAX_PARALLEL_SCANS, POLL_INTERVAL_SECONDS, SCAN_TIMEOUT_MINUTES
     global ENABLE_CHECKPOINTING, CHECKPOINT_STORAGE, CHECKPOINT_INTERVAL
     global AUTH_MODE, DEBUG_MODE
-    global UPLOAD_TO_LAKEHOUSE, LAKEHOUSE_WORKSPACE_ID, LAKEHOUSE_ID, LAKEHOUSE_UPLOAD_PATH
-    
+    global \
+        UPLOAD_TO_LAKEHOUSE, \
+        LAKEHOUSE_WORKSPACE_ID, \
+        LAKEHOUSE_ID, \
+        LAKEHOUSE_UPLOAD_PATH
+
     # API settings
-    if 'api' in config:
-        api_config = config['api']
-        if 'max_parallel_scans' in api_config:
-            MAX_PARALLEL_SCANS = api_config['max_parallel_scans']
-        if 'poll_interval_seconds' in api_config:
-            POLL_INTERVAL_SECONDS = api_config['poll_interval_seconds']
-        if 'scan_timeout_minutes' in api_config:
-            SCAN_TIMEOUT_MINUTES = api_config['scan_timeout_minutes']
-    
+    if "api" in config:
+        api_config = config["api"]
+        if "max_parallel_scans" in api_config:
+            MAX_PARALLEL_SCANS = api_config["max_parallel_scans"]
+        if "poll_interval_seconds" in api_config:
+            POLL_INTERVAL_SECONDS = api_config["poll_interval_seconds"]
+        if "scan_timeout_minutes" in api_config:
+            SCAN_TIMEOUT_MINUTES = api_config["scan_timeout_minutes"]
+
     # Checkpoint settings
-    if 'checkpoint' in config:
-        cp_config = config['checkpoint']
-        if 'enabled' in cp_config:
-            ENABLE_CHECKPOINTING = cp_config['enabled']
-        if 'storage' in cp_config:
-            CHECKPOINT_STORAGE = cp_config['storage']
-        if 'interval' in cp_config:
-            CHECKPOINT_INTERVAL = cp_config['interval']
-    
+    if "checkpoint" in config:
+        cp_config = config["checkpoint"]
+        if "enabled" in cp_config:
+            ENABLE_CHECKPOINTING = cp_config["enabled"]
+        if "storage" in cp_config:
+            CHECKPOINT_STORAGE = cp_config["storage"]
+        if "interval" in cp_config:
+            CHECKPOINT_INTERVAL = cp_config["interval"]
+
     # Auth settings
-    if 'auth' in config:
-        auth_config = config['auth']
-        if 'mode' in auth_config:
-            AUTH_MODE = auth_config['mode']
-    
+    if "auth" in config:
+        auth_config = config["auth"]
+        if "mode" in auth_config:
+            AUTH_MODE = auth_config["mode"]
+
     # Lakehouse upload settings (for local execution)
-    if 'lakehouse' in config:
-        lh_config = config['lakehouse']
-        if 'upload_enabled' in lh_config:
-            UPLOAD_TO_LAKEHOUSE = lh_config['upload_enabled']
-        if 'workspace_id' in lh_config:
-            LAKEHOUSE_WORKSPACE_ID = lh_config['workspace_id']
-        if 'lakehouse_id' in lh_config:
-            LAKEHOUSE_ID = lh_config['lakehouse_id']
-        if 'upload_path' in lh_config:
-            LAKEHOUSE_UPLOAD_PATH = lh_config['upload_path']
-    
+    if "lakehouse" in config:
+        lh_config = config["lakehouse"]
+        if "upload_enabled" in lh_config:
+            UPLOAD_TO_LAKEHOUSE = lh_config["upload_enabled"]
+        if "workspace_id" in lh_config:
+            LAKEHOUSE_WORKSPACE_ID = lh_config["workspace_id"]
+        if "lakehouse_id" in lh_config:
+            LAKEHOUSE_ID = lh_config["lakehouse_id"]
+        if "upload_path" in lh_config:
+            LAKEHOUSE_UPLOAD_PATH = lh_config["upload_path"]
+
     # Debug settings
-    if 'debug' in config:
-        DEBUG_MODE = config.get('debug', False)
+    if "debug" in config:
+        DEBUG_MODE = config.get("debug", False)
+
 
 # --- Checkpoint/Resume Management ---
 
+
 class CheckpointManager:
     """Manages checkpoint/resume state for long-running scans."""
-    
-    def __init__(self, checkpoint_id: str, storage: str = "json", checkpoint_dir: str = CHECKPOINT_DIR):
+
+    def __init__(
+        self,
+        checkpoint_id: str,
+        storage: str = "json",
+        checkpoint_dir: str = CHECKPOINT_DIR,
+    ):
         """
         Initialize checkpoint manager.
-        
+
         Args:
             checkpoint_id: Unique identifier for this scan (e.g., 'full_scan_20260116')
             storage: 'json' for local file or 'lakehouse' for Fabric storage
@@ -421,25 +502,31 @@ class CheckpointManager:
         self.storage = storage
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_file = f"{checkpoint_id}_checkpoint.json"
-        
+
         # Create checkpoint directory if it doesn't exist (local only)
         if storage == "json" and not RUNNING_IN_FABRIC:
             Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
-    
+
     def save_checkpoint(self, state: dict):
         """
         Save checkpoint state.
-        
+
         Args:
             state: Dictionary containing scan state (completed_batch_indices, total_batches, etc.)
         """
-        state['last_checkpoint_time'] = datetime.now(timezone.utc).isoformat()
-        
+        state["last_checkpoint_time"] = datetime.now(timezone.utc).isoformat()
+
         checkpoint_data = json.dumps(state, indent=2)
-        
-        if self.storage == "lakehouse" and RUNNING_IN_FABRIC and mssparkutils is not None:
+
+        if (
+            self.storage == "lakehouse"
+            and RUNNING_IN_FABRIC
+            and mssparkutils is not None
+        ):
             try:
-                checkpoint_path = f"{_to_lakehouse_path(self.checkpoint_dir)}/{self.checkpoint_file}"
+                checkpoint_path = (
+                    f"{_to_lakehouse_path(self.checkpoint_dir)}/{self.checkpoint_file}"
+                )
                 mssparkutils.fs.put(checkpoint_path, checkpoint_data, overwrite=True)
                 print(f"💾 Checkpoint saved to lakehouse: {checkpoint_path}")
             except Exception as e:
@@ -448,28 +535,36 @@ class CheckpointManager:
                 self._save_local_checkpoint(checkpoint_data)
         else:
             self._save_local_checkpoint(checkpoint_data)
-    
+
     def _save_local_checkpoint(self, checkpoint_data: str):
         """Save checkpoint to local file."""
         checkpoint_path = Path(self.checkpoint_dir) / self.checkpoint_file
         try:
-            with open(checkpoint_path, 'w') as f:
+            with open(checkpoint_path, "w") as f:
                 f.write(checkpoint_data)
             print(f"💾 Checkpoint saved to: {checkpoint_path}")
         except Exception as e:
             print(f"⚠️  Failed to save checkpoint: {e}")
-    
+
     def load_checkpoint(self) -> Optional[dict]:
         """
         Load checkpoint state if it exists.
-        
+
         Returns:
             Dictionary containing saved state, or None if no checkpoint exists
         """
-        if self.storage == "lakehouse" and RUNNING_IN_FABRIC and mssparkutils is not None:
+        if (
+            self.storage == "lakehouse"
+            and RUNNING_IN_FABRIC
+            and mssparkutils is not None
+        ):
             try:
-                checkpoint_path = f"{_to_lakehouse_path(self.checkpoint_dir)}/{self.checkpoint_file}"
-                checkpoint_data = mssparkutils.fs.head(checkpoint_path, 1000000)  # Read up to 1MB
+                checkpoint_path = (
+                    f"{_to_lakehouse_path(self.checkpoint_dir)}/{self.checkpoint_file}"
+                )
+                checkpoint_data = mssparkutils.fs.head(
+                    checkpoint_path, 1000000
+                )  # Read up to 1MB
                 state = json.loads(checkpoint_data)
                 print(f"📂 Loaded checkpoint from lakehouse: {checkpoint_path}")
                 return state
@@ -478,25 +573,31 @@ class CheckpointManager:
                 return self._load_local_checkpoint()
         else:
             return self._load_local_checkpoint()
-    
+
     def _load_local_checkpoint(self) -> Optional[dict]:
         """Load checkpoint from local file."""
         checkpoint_path = Path(self.checkpoint_dir) / self.checkpoint_file
         if checkpoint_path.exists():
             try:
-                with open(checkpoint_path, 'r') as f:
+                with open(checkpoint_path, "r") as f:
                     state = json.load(f)
                 print(f"📂 Loaded checkpoint from: {checkpoint_path}")
                 return state
             except Exception as e:
                 print(f"⚠️  Failed to load checkpoint: {e}")
         return None
-    
+
     def clear_checkpoint(self):
         """Delete checkpoint file after successful completion."""
-        if self.storage == "lakehouse" and RUNNING_IN_FABRIC and mssparkutils is not None:
+        if (
+            self.storage == "lakehouse"
+            and RUNNING_IN_FABRIC
+            and mssparkutils is not None
+        ):
             try:
-                checkpoint_path = f"{_to_lakehouse_path(self.checkpoint_dir)}/{self.checkpoint_file}"
+                checkpoint_path = (
+                    f"{_to_lakehouse_path(self.checkpoint_dir)}/{self.checkpoint_file}"
+                )
                 mssparkutils.fs.rm(checkpoint_path)
                 print(f"🗑️  Checkpoint cleared: {checkpoint_path}")
             except Exception:
@@ -510,54 +611,78 @@ class CheckpointManager:
                 except Exception as e:
                     print(f"⚠️  Failed to clear checkpoint: {e}")
 
+
 # --- Auth ---
 
 # Token cache for main Scanner API authentication
 _scanner_token_cache = {"token": None, "expires_at": 0, "auth_mode": None}
+_token_cache_lock = threading.Lock()
 
 # Token cache for user authentication to avoid repeated logins
 _upload_user_token_cache = {"token": None, "expires_at": 0}
 
+
 def get_access_token_spn() -> str:
     """Get Service Principal access token with caching and auto-refresh."""
     global _scanner_token_cache
-    
-    # Check if cached token is still valid (with 5 min buffer)
-    if _scanner_token_cache["token"] and time.time() < (_scanner_token_cache["expires_at"] - 300):
-        return _scanner_token_cache["token"]
-    
-    # Token expired or not cached, get new one
+
+    # Validate credentials are configured
+    missing = []
+    if not TENANT_ID:
+        missing.append("FABRIC_SP_TENANT_ID")
+    if not CLIENT_ID:
+        missing.append("FABRIC_SP_CLIENT_ID")
+    if not CLIENT_SECRET:
+        missing.append("FABRIC_SP_CLIENT_SECRET")
+    if missing:
+        raise ValueError(
+            f"Service Principal credentials not configured. "
+            f"Set environment variable(s): {', '.join(missing)}"
+        )
+
+    with _token_cache_lock:
+        # Check if cached token is still valid (with 5 min buffer)
+        if _scanner_token_cache["token"] and time.time() < (
+            _scanner_token_cache["expires_at"] - 300
+        ):
+            return _scanner_token_cache["token"]
+
+    # Token expired or not cached, get new one (outside lock to avoid blocking)
     data = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
         "scope": FABRIC_SCOPE,
         "grant_type": "client_credentials",
     }
-    r = requests.post(AUTH_URL, data=data, timeout=30)
+    r = _get_http_session().post(AUTH_URL, data=data, timeout=30)
     r.raise_for_status()
     token_response = r.json()
-    
-    # Cache the token with expiration (default 1 hour = 3600 seconds)
-    _scanner_token_cache["token"] = token_response.get("access_token")
-    _scanner_token_cache["expires_at"] = time.time() + token_response.get("expires_in", 3600)
-    _scanner_token_cache["auth_mode"] = "spn"
-    
-    return _scanner_token_cache["token"]
+
+    with _token_cache_lock:
+        # Cache the token with expiration (default 1 hour = 3600 seconds)
+        _scanner_token_cache["token"] = token_response.get("access_token")
+        _scanner_token_cache["expires_at"] = time.time() + token_response.get(
+            "expires_in", 3600
+        )
+        _scanner_token_cache["auth_mode"] = "spn"
+
+        return _scanner_token_cache["token"]
+
 
 def get_upload_token() -> str:
     """
     Get access token for lakehouse uploads.
-    
+
     Supports three authentication methods (in priority order):
     1. Interactive user authentication (if UPLOAD_USE_USER_AUTH=true)
     2. Upload Service Principal (if UPLOAD_TENANT_ID, UPLOAD_CLIENT_ID, UPLOAD_CLIENT_SECRET set)
     3. Main Service Principal credentials (fallback)
-    
+
     This allows for principle of least privilege:
     - Main credentials can be Viewer (read-only) for scanning workspaces
     - Upload credentials can be Contributor (write) for lakehouse file uploads
     - User auth provides individual user accountability
-    
+
     Returns:
         Access token for Fabric API with write permissions
     """
@@ -569,19 +694,25 @@ def get_upload_token() -> str:
             print("   Falling back to Service Principal authentication.")
         else:
             # Check if cached token is still valid (with 5 min buffer)
-            if _upload_user_token_cache["token"] and time.time() < (_upload_user_token_cache["expires_at"] - 300):
+            if _upload_user_token_cache["token"] and time.time() < (
+                _upload_user_token_cache["expires_at"] - 300
+            ):
                 return _upload_user_token_cache["token"]
-            
+
             # Use tenant ID from upload config or main config
             tenant_id = UPLOAD_TENANT_ID if UPLOAD_TENANT_ID else TENANT_ID
-            
+
             # Use client ID from upload config or default Power BI client ID
             # Default Power BI client ID allows delegated auth without app registration
-            client_id = UPLOAD_CLIENT_ID if UPLOAD_CLIENT_ID else "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
-            
+            client_id = (
+                UPLOAD_CLIENT_ID
+                if UPLOAD_CLIENT_ID
+                else "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+            )
+
             authority = f"https://login.microsoftonline.com/{tenant_id}"
             app = PublicClientApplication(client_id=client_id, authority=authority)
-            
+
             # Try to get token silently first (from cache)
             accounts = app.get_accounts()
             if accounts:
@@ -589,159 +720,118 @@ def get_upload_token() -> str:
                 if result and "access_token" in result:
                     # Cache the token
                     _upload_user_token_cache["token"] = result["access_token"]
-                    _upload_user_token_cache["expires_at"] = time.time() + result.get("expires_in", 3600)
+                    _upload_user_token_cache["expires_at"] = time.time() + result.get(
+                        "expires_in", 3600
+                    )
                     return result["access_token"]
-            
+
             # Interactive login required
             print("\n🔐 User authentication required for lakehouse uploads...")
-            print("   Opening browser for login (or follow device code instructions)...\n")
-            
+            print(
+                "   Opening browser for login (or follow device code instructions)...\n"
+            )
+
             # Try device code flow (works better in terminals/remote sessions)
             flow = app.initiate_device_flow(scopes=[FABRIC_SCOPE])
             if "user_code" not in flow:
-                raise ValueError(f"Failed to create device flow: {flow.get('error_description')}")
-            
+                raise ValueError(
+                    f"Failed to create device flow: {flow.get('error_description')}"
+                )
+
             print(flow["message"])
             result = app.acquire_token_by_device_flow(flow)
-            
+
             if "access_token" in result:
                 print("✅ User authentication successful!\n")
                 # Cache the token
                 _upload_user_token_cache["token"] = result["access_token"]
-                _upload_user_token_cache["expires_at"] = time.time() + result.get("expires_in", 3600)
+                _upload_user_token_cache["expires_at"] = time.time() + result.get(
+                    "expires_in", 3600
+                )
                 return result["access_token"]
             else:
-                error = result.get("error_description", result.get("error", "Unknown error"))
+                error = result.get(
+                    "error_description", result.get("error", "Unknown error")
+                )
                 print(f"⚠️  User authentication failed: {error}")
                 print("   Falling back to Service Principal authentication.\n")
-    
+
     # Option 2: Upload Service Principal credentials
     if UPLOAD_TENANT_ID and UPLOAD_CLIENT_ID and UPLOAD_CLIENT_SECRET:
-        upload_auth_url = f"https://login.microsoftonline.com/{UPLOAD_TENANT_ID}/oauth2/v2.0/token"
+        upload_auth_url = (
+            f"https://login.microsoftonline.com/{UPLOAD_TENANT_ID}/oauth2/v2.0/token"
+        )
         data = {
             "client_id": UPLOAD_CLIENT_ID,
             "client_secret": UPLOAD_CLIENT_SECRET,
             "scope": FABRIC_SCOPE,
             "grant_type": "client_credentials",
         }
-        r = requests.post(upload_auth_url, data=data, timeout=30)
+        r = _get_http_session().post(upload_auth_url, data=data, timeout=30)
         r.raise_for_status()
         return r.json().get("access_token")
-    
+
     # Option 3: Fall back to main credentials
     return ACCESS_TOKEN
 
 
-
-# Cache for created lakehouse directories to avoid redundant API calls
-_created_lakehouse_dirs = set()
-
-def ensure_lakehouse_directory(directory_path: str, workspace_id: str, lakehouse_id: str) -> bool:
-    """
-    Ensure a directory exists in the Fabric lakehouse by uploading a placeholder file.
-    
-    Args:
-        directory_path: Directory path in lakehouse (e.g., 'Files/scanner/raw/incremental')
-        workspace_id: Fabric workspace ID
-        lakehouse_id: Lakehouse ID
-    
-    Returns:
-        True if directory was created or already exists, False on error
-    """
-    # Check cache first to avoid redundant API calls
-    cache_key = f"{workspace_id}/{lakehouse_id}/{directory_path}"
-    if cache_key in _created_lakehouse_dirs:
-        return True
-    
-    try:
-        # Upload a tiny placeholder file to create the directory structure
-        # Fabric automatically creates parent directories when uploading files
-        placeholder_path = f"{directory_path}/.placeholder"
-        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/files/{placeholder_path}"
-        
-        # Use upload token (not main token) for write permissions
-        upload_token = get_upload_token()
-        
-        headers = {
-            "Authorization": f"Bearer {upload_token}",
-            "Content-Type": "application/octet-stream"
-        }
-        
-        # Upload empty file to create directory
-        response = requests.put(url, headers=headers, data=b"", timeout=30)
-        
-        if DEBUG_MODE:
-            print(f"   [DEBUG] Directory creation: {directory_path}")
-            print(f"   [DEBUG] Response: {response.status_code}")
-            if response.status_code not in [200, 201, 409]:
-                print(f"   [DEBUG] Error: {response.text}")
-        
-        if response.status_code in [200, 201]:
-            _created_lakehouse_dirs.add(cache_key)
-            return True
-        elif response.status_code == 409:  # Conflict - directory already exists
-            _created_lakehouse_dirs.add(cache_key)
-            return True
-        else:
-            if DEBUG_MODE:
-                print(f"   Directory creation response ({response.status_code}): {response.text}")
-            return False
-            
-    except Exception as e:
-        if DEBUG_MODE:
-            print(f"   Directory creation error: {e}")
-        return False
+# TODO: If lakehouse directory creation is needed again, see ensure_lakehouse_directory()
+# in git history (removed in commit 2da790e — was causing 404 errors).
 
 
-def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, workspace_id: str, lakehouse_id: str) -> bool:
+def upload_to_fabric_lakehouse(
+    local_file_path: str, lakehouse_path: str, workspace_id: str, lakehouse_id: str
+) -> bool:
     """
     Upload a file from local filesystem to Fabric Lakehouse using REST API.
-    
+
     Uses upload-specific credentials if configured (UPLOAD_TENANT_ID, UPLOAD_CLIENT_ID, UPLOAD_CLIENT_SECRET),
     otherwise falls back to main credentials. This allows principle of least privilege:
     - Main credentials: Viewer (read-only) for scanning
     - Upload credentials: Contributor (write) for file uploads
-    
+
     Args:
         local_file_path: Local file path to upload
         lakehouse_path: Path within lakehouse (e.g., 'Files/scanner/raw/file.json')
         workspace_id: Fabric workspace ID containing the lakehouse
         lakehouse_id: Lakehouse ID
-    
+
     Returns:
         True if upload succeeded, False otherwise
     """
     if not workspace_id or not lakehouse_id:
-        print(f"⚠️  Skipping upload: workspace_id or lakehouse_id not configured")
+        print("⚠️  Skipping upload: workspace_id or lakehouse_id not configured")
         return False
-    
+
     try:
         # Read file content
-        with open(local_file_path, 'rb') as f:
+        with open(local_file_path, "rb") as f:
             file_content = f.read()
-        
+
         # Strip "Files/" prefix if present (API endpoint already includes /Files/)
         clean_path = lakehouse_path
         if clean_path.startswith("Files/"):
             clean_path = clean_path[6:]  # Remove "Files/" prefix
-        
+
         # Fabric Files API endpoint
         url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/Files/{clean_path}"
-        
+
         if DEBUG_MODE:
             print(f"   [DEBUG] Upload URL: {url}")
-        
+
         # Get token for uploads (uses upload credentials if configured, otherwise main credentials)
         upload_token = get_upload_token()
-        
+
         headers = {
             "Authorization": f"Bearer {upload_token}",
-            "Content-Type": "application/octet-stream"
+            "Content-Type": "application/octet-stream",
         }
-        
+
         # PUT request to upload/overwrite file
-        response = requests.put(url, headers=headers, data=file_content, timeout=120)
-        
+        response = _get_http_session().put(
+            url, headers=headers, data=file_content, timeout=120
+        )
+
         if response.status_code in [200, 201]:
             print(f"✅ Uploaded to lakehouse: {lakehouse_path}")
             return True
@@ -749,18 +839,19 @@ def upload_to_fabric_lakehouse(local_file_path: str, lakehouse_path: str, worksp
             # EntityNotFound - either workspace/lakehouse ID is wrong or path has issues
             print(f"⚠️  Upload failed - resource not found (404): {lakehouse_path}")
             if DEBUG_MODE:
-                print(f"   Response: {response.text}")
-                print(f"   Check workspace_id and lakehouse_id are correct")
+                print(f"   Response: {response.text[:200]}")
+                print("   Check workspace_id and lakehouse_id are correct")
             return False
         else:
             print(f"⚠️  Upload failed ({response.status_code}): {lakehouse_path}")
             if DEBUG_MODE:
-                print(f"   Response: {response.text}")
+                print(f"   Response: {response.text[:200]}")
             return False
-            
-    except Exception as e:
+
+    except (requests.RequestException, IOError, ValueError) as e:
         print(f"⚠️  Upload error for {lakehouse_path}: {e}")
         return False
+
 
 def get_access_token_interactive() -> str:
     """
@@ -768,46 +859,55 @@ def get_access_token_interactive() -> str:
     Tries Azure CLI first, falls back to browser-based login.
     """
     global _scanner_token_cache
-    
+
     # Check if cached token is still valid (with 5 min buffer)
-    if _scanner_token_cache["token"] and _scanner_token_cache["auth_mode"] == "interactive" and time.time() < (_scanner_token_cache["expires_at"] - 300):
-        return _scanner_token_cache["token"]
-    
+    with _token_cache_lock:
+        if (
+            _scanner_token_cache["token"]
+            and _scanner_token_cache["auth_mode"] == "interactive"
+            and time.time() < (_scanner_token_cache["expires_at"] - 300)
+        ):
+            return _scanner_token_cache["token"]
+
     try:
         # Try importing azure-identity (install with: pip install azure-identity)
         from azure.identity import AzureCliCredential, InteractiveBrowserCredential
-        
+
         # First try Azure CLI (if user is already logged in via 'az login')
         try:
             print("Attempting authentication via Azure CLI...")
             credential = AzureCliCredential()
-            token = credential.get_token("https://analysis.windows.net/powerbi/api/.default")
+            token = credential.get_token(
+                "https://analysis.windows.net/powerbi/api/.default"
+            )
             print("✅ Authenticated via Azure CLI")
-            
-            # Cache the token
-            _scanner_token_cache["token"] = token.token
-            _scanner_token_cache["expires_at"] = token.expires_on
-            _scanner_token_cache["auth_mode"] = "interactive"
-            
+
+            with _token_cache_lock:
+                _scanner_token_cache["token"] = token.token
+                _scanner_token_cache["expires_at"] = token.expires_on
+                _scanner_token_cache["auth_mode"] = "interactive"
+
             return token.token
         except Exception as cli_error:
             print(f"Azure CLI not available: {cli_error}")
             print("Falling back to interactive browser login...")
-            
+
             # Fall back to browser-based interactive login
             credential = InteractiveBrowserCredential(
-                tenant_id=TENANT_ID if TENANT_ID != "<YOUR_TENANT_ID>" else None
+                tenant_id=TENANT_ID if TENANT_ID else None
             )
-            token = credential.get_token("https://analysis.windows.net/powerbi/api/.default")
+            token = credential.get_token(
+                "https://analysis.windows.net/powerbi/api/.default"
+            )
             print("✅ Authenticated via browser login")
-            
-            # Cache the token
-            _scanner_token_cache["token"] = token.token
-            _scanner_token_cache["expires_at"] = token.expires_on
-            _scanner_token_cache["auth_mode"] = "interactive"
-            
+
+            with _token_cache_lock:
+                _scanner_token_cache["token"] = token.token
+                _scanner_token_cache["expires_at"] = token.expires_on
+                _scanner_token_cache["auth_mode"] = "interactive"
+
             return token.token
-            
+
     except ImportError:
         print("ERROR: azure-identity library not found.")
         print("Install it with: pip install azure-identity")
@@ -818,68 +918,96 @@ def get_access_token_interactive() -> str:
 HEADERS = None
 ACCESS_TOKEN = None
 
+
 def refresh_access_token():
     """Refresh the access token if needed. Returns True if token was refreshed."""
     global HEADERS, ACCESS_TOKEN, _scanner_token_cache
-    
+
     # For delegated mode in Fabric, always get fresh token (Fabric manages caching)
     if AUTH_MODE == "delegated":
         if RUNNING_IN_FABRIC and mssparkutils is not None:
             ACCESS_TOKEN = mssparkutils.credentials.getToken("powerbi")
-            HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+            HEADERS = {
+                "Authorization": f"Bearer {ACCESS_TOKEN}",
+                "Content-Type": "application/json",
+            }
             return True
         return False
-    
+
     # Check if token needs refresh (within 5 min of expiry)
-    if _scanner_token_cache["token"] and time.time() >= (_scanner_token_cache["expires_at"] - 300):
+    with _token_cache_lock:
+        needs_refresh = _scanner_token_cache["token"] and time.time() >= (
+            _scanner_token_cache["expires_at"] - 300
+        )
+
+    if needs_refresh:
         if AUTH_MODE == "spn":
             ACCESS_TOKEN = get_access_token_spn()
         elif AUTH_MODE == "interactive":
             ACCESS_TOKEN = get_access_token_interactive()
-        
-        HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+
+        HEADERS = {
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        }
         return True
-    
+
     return False
+
 
 def initialize_authentication():
     """Initialize authentication based on AUTH_MODE. Call this before making API requests."""
     global HEADERS, ACCESS_TOKEN, AUTH_MODE, _scanner_token_cache
-    
+
     if AUTH_MODE == "delegated":
         if not RUNNING_IN_FABRIC:
-            print("WARNING: Delegated auth requires Fabric environment. Switching to interactive mode.")
+            print(
+                "WARNING: Delegated auth requires Fabric environment. Switching to interactive mode."
+            )
             AUTH_MODE = "interactive"
         else:
             print("Using Fabric delegated authentication...")
             ACCESS_TOKEN = mssparkutils.credentials.getToken("powerbi")
-            HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+            HEADERS = {
+                "Authorization": f"Bearer {ACCESS_TOKEN}",
+                "Content-Type": "application/json",
+            }
             # Note: Delegated mode doesn't use cache as Fabric manages token lifecycle
             return
 
     if AUTH_MODE == "interactive":
         print("Using interactive user authentication...")
         ACCESS_TOKEN = get_access_token_interactive()
-        HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+        HEADERS = {
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        }
 
     elif AUTH_MODE == "spn":
         print(f"Using Service Principal authentication (Tenant: {TENANT_ID[:8]}...)")
         ACCESS_TOKEN = get_access_token_spn()
-        HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+        HEADERS = {
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        }
 
     if HEADERS is None:
-        raise RuntimeError(f"Invalid AUTH_MODE: {AUTH_MODE}. Use 'spn', 'delegated', or 'interactive'")
+        raise RuntimeError(
+            f"Invalid AUTH_MODE: {AUTH_MODE}. Use 'spn', 'delegated', or 'interactive'"
+        )
+
 
 # --- Shared Rate Limiter for Parallel Scanning ---
+
 
 class SharedRateLimiter:
     """
     Thread-safe rate limiter for distributing API quota across parallel capacity scans.
-    
+
     Ensures that parallel workers respect the global API rate limit by coordinating
     API call allocations across threads.
     """
-    
+
     def __init__(self, max_calls_per_hour: int = 450, max_parallel_workers: int = 3):
         """
         Args:
@@ -889,33 +1017,33 @@ class SharedRateLimiter:
         self.max_calls_per_hour = max_calls_per_hour
         self.max_parallel_workers = max_parallel_workers
         self.calls_per_worker = max_calls_per_hour // max_parallel_workers
-        
+
         # Thread-safe tracking
         self._lock = threading.Lock()
         self._worker_quotas = {}  # worker_id -> remaining quota
         self._total_calls_made = 0
         self._start_time = time.time()
-        
-        print(f"\n📊 SharedRateLimiter initialized:")
+
+        print("\n📊 SharedRateLimiter initialized:")
         print(f"   Total quota: {max_calls_per_hour} calls/hour")
         print(f"   Parallel workers: {max_parallel_workers}")
         print(f"   Per-worker quota: {self.calls_per_worker} calls/hour")
-    
+
     def allocate_worker(self, worker_id: str) -> int:
         """Allocate quota to a new worker."""
         with self._lock:
             if worker_id not in self._worker_quotas:
                 self._worker_quotas[worker_id] = self.calls_per_worker
             return self._worker_quotas[worker_id]
-    
+
     def acquire(self, worker_id: str, count: int = 1) -> bool:
         """
         Request permission to make API calls.
-        
+
         Args:
             worker_id: Unique identifier for the worker
             count: Number of API calls to make
-        
+
         Returns:
             True if quota available, False if limit reached
         """
@@ -923,7 +1051,7 @@ class SharedRateLimiter:
             # Allocate worker if first time
             if worker_id not in self._worker_quotas:
                 self.allocate_worker(worker_id)
-            
+
             # Check if worker has quota
             if self._worker_quotas[worker_id] >= count:
                 self._worker_quotas[worker_id] -= count
@@ -931,30 +1059,32 @@ class SharedRateLimiter:
                 return True
             else:
                 return False
-    
+
     def release(self, worker_id: str, count: int = 1):
         """Return unused quota (e.g., if call failed)."""
         with self._lock:
             if worker_id in self._worker_quotas:
                 self._worker_quotas[worker_id] += count
                 self._total_calls_made -= count
-    
+
     def get_stats(self) -> dict:
         """Get current rate limiter statistics."""
         with self._lock:
             elapsed_hours = (time.time() - self._start_time) / 3600
             return {
-                'total_calls_made': self._total_calls_made,
-                'remaining_quota': self.max_calls_per_hour - self._total_calls_made,
-                'elapsed_hours': elapsed_hours,
-                'calls_per_hour_rate': self._total_calls_made / elapsed_hours if elapsed_hours > 0 else 0,
-                'worker_quotas': dict(self._worker_quotas)
+                "total_calls_made": self._total_calls_made,
+                "remaining_quota": self.max_calls_per_hour - self._total_calls_made,
+                "elapsed_hours": elapsed_hours,
+                "calls_per_hour_rate": self._total_calls_made / elapsed_hours
+                if elapsed_hours > 0
+                else 0,
+                "worker_quotas": dict(self._worker_quotas),
             }
-    
+
     def wait_if_needed(self, worker_id: str) -> bool:
         """
         Check if worker should wait due to quota exhaustion.
-        
+
         Returns:
             True if worker should continue, False if quota exhausted
         """
@@ -963,20 +1093,22 @@ class SharedRateLimiter:
                 return self._worker_quotas[worker_id] > 0
             return True
 
+
 # --- Connection Hash Tracker for Optimization ---
+
 
 class ConnectionHashTracker:
     """
     Tracks connection hashes to detect changes in incremental scans.
-    
+
     Calculates and stores SHA256 hashes of workspace connections to enable
     smart filtering during incremental scans (80-90% reduction in API calls).
     """
-    
+
     def __init__(self, config, running_in_fabric: bool = False):
         """
         Initialize hash tracker.
-        
+
         Args:
             config: Configuration object with curated_dir, tenant_id, etc.
             running_in_fabric: Whether running in Fabric environment
@@ -984,50 +1116,51 @@ class ConnectionHashTracker:
         self.config = config
         self.running_in_fabric = running_in_fabric
         self.hash_table = "workspace_connection_hashes"
-        
+
     def calculate_workspace_hash(self, connections: list) -> str:
         """
         Calculate SHA256 hash of workspace connections.
-        
+
         Args:
             connections: List of connection dictionaries
-            
+
         Returns:
             64-character hex string (SHA256 hash)
         """
-        import hashlib
-        import json
-        
         if not connections:
             return hashlib.sha256(b"").hexdigest()
-        
+
         # Sort connections for deterministic hashing
         sorted_connections = sorted(
             connections,
-            key=lambda c: f"{c.get('connector', '')}_{c.get('server', '')}_{c.get('database', '')}"
+            key=lambda c: (
+                f"{c.get('connector', '')}_{c.get('server', '')}_{c.get('database', '')}"
+            ),
         )
-        
+
         # Create normalized representation
         hash_data = []
         for conn in sorted_connections:
-            hash_data.append({
-                'connector': conn.get('connector', ''),
-                'server': conn.get('server', ''),
-                'database': conn.get('database', ''),
-                'endpoint': conn.get('endpoint', '')
-            })
-        
+            hash_data.append(
+                {
+                    "connector": conn.get("connector", ""),
+                    "server": conn.get("server", ""),
+                    "database": conn.get("database", ""),
+                    "endpoint": conn.get("endpoint", ""),
+                }
+            )
+
         # Calculate hash
         json_str = json.dumps(hash_data, sort_keys=True)
-        return hashlib.sha256(json_str.encode('utf-8')).hexdigest()
-    
+        return hashlib.sha256(json_str.encode("utf-8")).hexdigest()
+
     def calculate_workspace_hashes(self, workspace_connections: dict) -> dict:
         """
         Calculate hashes for multiple workspaces.
-        
+
         Args:
             workspace_connections: Dict of {workspace_id: [connections]}
-            
+
         Returns:
             Dict of {workspace_id: hash_value}
         """
@@ -1035,29 +1168,26 @@ class ConnectionHashTracker:
             ws_id: self.calculate_workspace_hash(connections)
             for ws_id, connections in workspace_connections.items()
         }
-    
+
     def get_stored_hashes(self) -> dict:
         """
         Load stored hashes from previous scans.
-        
+
         Returns:
             Dict of {workspace_id: {'hash': hash_value, 'last_scan_time': timestamp}}
         """
         try:
-            from pathlib import Path
-            from datetime import datetime
-            
             if self.running_in_fabric and SPARK_AVAILABLE:
                 # Read from lakehouse table
                 try:
                     spark = SparkSession.builder.getOrCreate()
                     df = spark.table(self.hash_table)
-                    
+
                     stored_hashes = {}
                     for row in df.collect():
                         stored_hashes[row.workspace_id] = {
-                            'hash': row.connection_hash,
-                            'last_scan_time': row.last_scan_time
+                            "hash": row.connection_hash,
+                            "last_scan_time": row.last_scan_time,
                         }
                     return stored_hashes
                 except Exception:
@@ -1065,67 +1195,69 @@ class ConnectionHashTracker:
             else:
                 # Read from local file (pandas)
                 import pandas as pd
+
                 output_path = Path(self.config.curated_dir)
                 hash_file = output_path / f"{self.hash_table}.parquet"
-                
+
                 if hash_file.exists():
                     df = pd.read_parquet(hash_file)
-                    stored_hashes = {}
-                    for _, row in df.iterrows():
-                        stored_hashes[row['workspace_id']] = {
-                            'hash': row['connection_hash'],
-                            'last_scan_time': row['last_scan_time']
-                        }
+                    # Vectorized conversion — avoids slow iterrows() loop
+                    stored_hashes = (
+                        df.set_index("workspace_id")[
+                            ["connection_hash", "last_scan_time"]
+                        ]
+                        .rename(columns={"connection_hash": "hash"})
+                        .to_dict("index")
+                    )
                     return stored_hashes
                 return {}
         except Exception as e:
             print(f"   Warning: Could not load stored hashes: {e}")
             return {}
-    
+
     def save_hashes(self, workspace_hashes: dict, workspace_metadata: dict) -> None:
         """
         Save workspace connection hashes for future scans.
-        
+
         Args:
             workspace_hashes: Dict of {workspace_id: hash_value}
             workspace_metadata: Dict of {workspace_id: {'name': ..., 'type': ...}}
         """
         try:
-            from datetime import datetime, timezone
-            from pathlib import Path
-            
             # Prepare data
             now = datetime.now(timezone.utc).isoformat()
             hash_records = []
-            
+
             for ws_id, hash_value in workspace_hashes.items():
                 metadata = workspace_metadata.get(ws_id, {})
-                hash_records.append({
-                    'workspace_id': ws_id,
-                    'workspace_name': metadata.get('name', ''),
-                    'workspace_type': metadata.get('type', ''),
-                    'connection_hash': hash_value,
-                    'last_scan_time': now
-                })
-            
+                hash_records.append(
+                    {
+                        "workspace_id": ws_id,
+                        "workspace_name": metadata.get("name", ""),
+                        "workspace_type": metadata.get("type", ""),
+                        "connection_hash": hash_value,
+                        "last_scan_time": now,
+                    }
+                )
+
             if self.running_in_fabric and SPARK_AVAILABLE:
                 # Save to lakehouse table
                 spark = SparkSession.builder.getOrCreate()
                 df_new = spark.createDataFrame(hash_records)
-                
+
                 # Merge with existing
                 try:
                     df_existing = spark.table(self.hash_table)
-                    df_merged = df_existing.alias("old").join(
-                        df_new.alias("new"),
-                        on="workspace_id",
-                        how="full_outer"
-                    ).selectExpr(
-                        "coalesce(new.workspace_id, old.workspace_id) as workspace_id",
-                        "coalesce(new.workspace_name, old.workspace_name) as workspace_name",
-                        "coalesce(new.workspace_type, old.workspace_type) as workspace_type",
-                        "coalesce(new.connection_hash, old.connection_hash) as connection_hash",
-                        "coalesce(new.last_scan_time, old.last_scan_time) as last_scan_time"
+                    df_merged = (
+                        df_existing.alias("old")
+                        .join(df_new.alias("new"), on="workspace_id", how="full_outer")
+                        .selectExpr(
+                            "coalesce(new.workspace_id, old.workspace_id) as workspace_id",
+                            "coalesce(new.workspace_name, old.workspace_name) as workspace_name",
+                            "coalesce(new.workspace_type, old.workspace_type) as workspace_type",
+                            "coalesce(new.connection_hash, old.connection_hash) as connection_hash",
+                            "coalesce(new.last_scan_time, old.last_scan_time) as last_scan_time",
+                        )
                     )
                     df_merged.write.mode("overwrite").saveAsTable(self.hash_table)
                 except Exception:
@@ -1134,40 +1266,43 @@ class ConnectionHashTracker:
             else:
                 # Save to local file (pandas)
                 import pandas as pd
+
                 output_path = Path(self.config.curated_dir)
                 output_path.mkdir(parents=True, exist_ok=True)
                 hash_file = output_path / f"{self.hash_table}.parquet"
-                
+
                 df_new = pd.DataFrame(hash_records)
-                
+
                 # Merge with existing
                 if hash_file.exists():
                     df_existing = pd.read_parquet(hash_file)
                     df_merged = pd.concat([df_existing, df_new]).drop_duplicates(
-                        subset=['workspace_id'],
-                        keep='last'
+                        subset=["workspace_id"], keep="last"
                     )
                     df_merged.to_parquet(hash_file, index=False)
                 else:
                     df_new.to_parquet(hash_file, index=False)
-                    
+
         except Exception as e:
             print(f"   Warning: Could not save hashes: {e}")
+
 
 # --- Scanner API helpers ---
 
 
-def read_workspaces_from_table(table_name: str, include_personal: bool = True) -> List[Dict[str, Any]]:
+def read_workspaces_from_table(
+    table_name: str, include_personal: bool = True
+) -> List[Dict[str, Any]]:
     """
     Read workspace list from lakehouse table or local parquet file.
-    
+
     Args:
         table_name: Name of the table/file containing workspace data
         include_personal: Whether to include personal workspaces
-    
+
     Returns:
         List of workspace dictionaries with 'id' and optionally 'name', 'type', 'capacityId'
-    
+
     Expected table schema:
         - workspace_id (required): Workspace GUID
         - workspace_name (optional): Workspace display name
@@ -1175,41 +1310,51 @@ def read_workspaces_from_table(table_name: str, include_personal: bool = True) -
         - capacity_id (optional): Capacity ID
     """
     workspaces = []
-    
+
     # Validate table name is not empty
     if not table_name or not table_name.strip():
         raise ValueError("Table name cannot be empty")
-    
+
     try:
         if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
             # Read from Spark table
             if DEBUG_MODE:
-                print(f"[DEBUG] read_workspaces_from_table: Reading from Spark table '{table_name}'")
+                print(
+                    f"[DEBUG] read_workspaces_from_table: Reading from Spark table '{table_name}'"
+                )
                 print(f"[DEBUG] include_personal={include_personal}")
-            
+
             # Validate table name to prevent SQL injection (allow only alphanumeric, underscore, dot)
-            if not re.match(r'^[a-zA-Z0-9_\.]+$', table_name):
-                raise ValueError(f"Invalid table name '{table_name}'. Only alphanumeric characters, underscores, and dots are allowed.")
-            
+            if not re.match(r"^[a-zA-Z0-9_\.]+$", table_name):
+                raise ValueError(
+                    f"Invalid table name '{table_name}'. Only alphanumeric characters, underscores, and dots are allowed."
+                )
+
             print(f"📊 Reading workspace list from table: {table_name}")
             df = spark.sql(f"SELECT * FROM {table_name}")
             if DEBUG_MODE:
                 print(f"[DEBUG] Table row count before filtering: {df.count()}")
-            
+
             # Validate required column exists
             if "workspace_id" not in df.columns:
                 if DEBUG_MODE:
-                    print(f"[DEBUG] Required column 'workspace_id' not found in Spark table. Available: {df.columns}")
-                raise ValueError(f"Required column 'workspace_id' not found in table '{table_name}'")
-            
+                    print(
+                        f"[DEBUG] Required column 'workspace_id' not found in Spark table. Available: {df.columns}"
+                    )
+                raise ValueError(
+                    f"Required column 'workspace_id' not found in table '{table_name}'"
+                )
+
             # Filter out null workspace_ids
             rows_before = df.count() if DEBUG_MODE else 0
             df = df.filter(F.col("workspace_id").isNotNull())
             if DEBUG_MODE:
                 rows_after = df.count()
                 if rows_before != rows_after:
-                    print(f"[DEBUG] Filtered out {rows_before - rows_after} rows with null workspace_id")
-            
+                    print(
+                        f"[DEBUG] Filtered out {rows_before - rows_after} rows with null workspace_id"
+                    )
+
             # Filter personal workspaces if needed
             if not include_personal:
                 if DEBUG_MODE:
@@ -1217,7 +1362,7 @@ def read_workspaces_from_table(table_name: str, include_personal: bool = True) -
                 df = df.filter(F.col("workspace_type") != "PersonalGroup")
                 if DEBUG_MODE:
                     print(f"[DEBUG] Table row count after filtering: {df.count()}")
-            
+
             # Convert to list of dicts
             for row in df.collect():
                 ws_dict = {"id": row.workspace_id}
@@ -1228,129 +1373,158 @@ def read_workspaces_from_table(table_name: str, include_personal: bool = True) -
                 if hasattr(row, "capacity_id"):
                     ws_dict["capacityId"] = row.capacity_id
                 workspaces.append(ws_dict)
-            
+
             if not workspaces:
                 if DEBUG_MODE:
-                    print(f"[DEBUG] Table '{table_name}' returned 0 workspaces after conversion")
+                    print(
+                        f"[DEBUG] Table '{table_name}' returned 0 workspaces after conversion"
+                    )
                 print(f"⚠️  Table '{table_name}' exists but contains no workspaces")
                 print("   Falling back to API call...")
                 return None
-            
+
             if DEBUG_MODE:
-                print(f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries")
-                print(f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}")
-            print(f"✅ Successfully loaded {len(workspaces)} workspaces from table '{table_name}'")
-        
+                print(
+                    f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries"
+                )
+                print(
+                    f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}"
+                )
+            print(
+                f"✅ Successfully loaded {len(workspaces)} workspaces from table '{table_name}'"
+            )
+
         else:
             # Read from local parquet file
             if DEBUG_MODE:
-                print(f"[DEBUG] read_workspaces_from_table: Running in local mode")
+                print("[DEBUG] read_workspaces_from_table: Running in local mode")
                 print(f"[DEBUG] PANDAS_AVAILABLE={PANDAS_AVAILABLE}")
-            
+
             if not PANDAS_AVAILABLE:
-                raise ImportError("pandas is required to read local parquet files. Install with: pip install pandas")
-            
-            from pathlib import Path
-            
+                raise ImportError(
+                    "pandas is required to read local parquet files. Install with: pip install pandas"
+                )
+
             # Try different file paths
             possible_paths = [
                 Path(CURATED_DIR) / f"{table_name}.parquet",
                 Path(table_name),
-                Path(f"{table_name}.parquet")
+                Path(f"{table_name}.parquet"),
             ]
-            
+
             if DEBUG_MODE:
-                print(f"[DEBUG] Searching for parquet file in paths:")
+                print("[DEBUG] Searching for parquet file in paths:")
                 for p in possible_paths:
                     print(f"[DEBUG]   - {p.absolute()} (exists: {p.exists()})")
-            
+
             df = None
             for path in possible_paths:
                 if path.exists():
                     print(f"📊 Reading workspace list from: {path}")
                     df = pd.read_parquet(path)
                     if DEBUG_MODE:
-                        print(f"[DEBUG] Loaded parquet file: {len(df)} rows, columns: {list(df.columns)}")
+                        print(
+                            f"[DEBUG] Loaded parquet file: {len(df)} rows, columns: {list(df.columns)}"
+                        )
                     break
-            
+
             if df is None:
                 if DEBUG_MODE:
                     print("[DEBUG] No parquet file found at any search path")
-                raise FileNotFoundError(f"Could not find workspace table at any of: {possible_paths}")
-            
+                raise FileNotFoundError(
+                    f"Could not find workspace table at any of: {possible_paths}"
+                )
+
             # Filter personal workspaces if needed
             if not include_personal and "workspace_type" in df.columns:
                 rows_before = len(df)
                 df = df[df["workspace_type"] != "PersonalGroup"]
                 if DEBUG_MODE:
-                    print(f"[DEBUG] Filtered PersonalGroup: {rows_before} -> {len(df)} rows")
-            
+                    print(
+                        f"[DEBUG] Filtered PersonalGroup: {rows_before} -> {len(df)} rows"
+                    )
+
             # Validate required column exists
             if "workspace_id" not in df.columns:
                 if DEBUG_MODE:
-                    print(f"[DEBUG] Required column 'workspace_id' not found. Available: {list(df.columns)}")
-                raise ValueError("Required column 'workspace_id' not found in parquet file")
-            
+                    print(
+                        f"[DEBUG] Required column 'workspace_id' not found. Available: {list(df.columns)}"
+                    )
+                raise ValueError(
+                    "Required column 'workspace_id' not found in parquet file"
+                )
+
             # Filter out null workspace_ids
             rows_before = len(df)
             df = df[df["workspace_id"].notna()]
             if DEBUG_MODE and rows_before != len(df):
-                print(f"[DEBUG] Filtered out {rows_before - len(df)} rows with null workspace_id")
-            
-            # Convert to list of dicts
-            for _, row in df.iterrows():
-                ws_dict = {"id": row["workspace_id"]}
-                if "workspace_name" in df.columns:
-                    ws_dict["name"] = row["workspace_name"]
-                if "workspace_type" in df.columns:
-                    ws_dict["type"] = row["workspace_type"]
-                if "capacity_id" in df.columns:
-                    ws_dict["capacityId"] = row["capacity_id"]
-                workspaces.append(ws_dict)
-            
+                print(
+                    f"[DEBUG] Filtered out {rows_before - len(df)} rows with null workspace_id"
+                )
+
+            # Convert to list of dicts — vectorized using to_dict('records')
+            col_map = {"workspace_id": "id"}
+            if "workspace_name" in df.columns:
+                col_map["workspace_name"] = "name"
+            if "workspace_type" in df.columns:
+                col_map["workspace_type"] = "type"
+            if "capacity_id" in df.columns:
+                col_map["capacity_id"] = "capacityId"
+
+            df_subset = df[list(col_map.keys())].rename(columns=col_map)
+            workspaces = df_subset.to_dict("records")
+
             if not workspaces:
                 if DEBUG_MODE:
-                    print(f"[DEBUG] Parquet file returned 0 workspaces after conversion")
-                print(f"⚠️  File contains no workspaces")
+                    print("[DEBUG] Parquet file returned 0 workspaces after conversion")
+                print("⚠️  File contains no workspaces")
                 print("   Falling back to API call...")
                 return None
-            
+
             if DEBUG_MODE:
-                print(f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries")
-                print(f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}")
+                print(
+                    f"[DEBUG] Successfully converted {len(workspaces)} rows to workspace dictionaries"
+                )
+                print(
+                    f"[DEBUG] Sample workspace: {workspaces[0] if workspaces else 'None'}"
+                )
             print(f"✅ Successfully loaded {len(workspaces)} workspaces from file")
-    
+
     except Exception as e:
         print(f"❌ Error reading workspace table '{table_name}': {e}")
         print("   Falling back to API call...")
         return None
-    
+
     return workspaces
 
 
-def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
+def get_all_workspaces(
+    include_personal: bool = True, modified_since: Optional[str] = None
+) -> List[Dict[str, Any]]:
     # Auto-refresh token if close to expiry
     refresh_access_token()
-    
+
     url = f"{PBI_ADMIN_BASE}/workspaces/modified"
     params = {"excludePersonalWorkspaces": str(not include_personal).lower()}
+    if modified_since:
+        params["modifiedSince"] = modified_since
     _track_api_call()  # Track API usage
-    
+
     try:
-        r = requests.get(url, headers=HEADERS, params=params, timeout=30)
+        r = _get_http_session().get(url, headers=HEADERS, params=params, timeout=30)
         r.raise_for_status()
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401:
             # Token expired, refresh and retry
             print("⚠️  Token expired, refreshing authentication...")
             refresh_access_token()
-            r = requests.get(url, headers=HEADERS, params=params, timeout=30)
+            r = _get_http_session().get(url, headers=HEADERS, params=params, timeout=30)
             r.raise_for_status()
         else:
             raise
-    
+
     payload = r.json() or {}
-    
+
     # Handle different response structures
     if isinstance(payload, list):
         workspaces = payload
@@ -1358,7 +1532,7 @@ def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
         workspaces = payload.get("workspaces", [])
     else:
         workspaces = []
-    
+
     # Ensure all items are dicts
     return [ws for ws in workspaces if isinstance(ws, dict)]
 
@@ -1366,41 +1540,43 @@ def get_all_workspaces(include_personal: bool = True) -> List[Dict[str, Any]]:
 def post_workspace_info(workspace_ids: List[str], max_retries: int = 3) -> str:
     if not workspace_ids:
         raise ValueError("workspace_ids cannot be empty.")
-    
+
     # Auto-refresh token if close to expiry
     refresh_access_token()
-    
+
     url = f"{PBI_ADMIN_BASE}/workspaces/getInfo"
-    body = {
-        "workspaces": workspace_ids,
-        "lineage": True,
-        "users": True
-    }
-    
+    body = {"workspaces": workspace_ids, "lineage": True, "users": True}
+
     for attempt in range(max_retries):
         try:
             _track_api_call()  # Track API usage
-            r = requests.post(url, headers=HEADERS, json=body, timeout=30)
+            r = _get_http_session().post(url, headers=HEADERS, json=body, timeout=30)
             r.raise_for_status()
-            
+
             response_data = r.json() or {}
-            
+
             # Handle different response structures
             # Per Microsoft docs: response is {"id": "uuid", "createdDateTime": "...", "status": "..."}
             if isinstance(response_data, dict):
-                scan_id = response_data.get("id") or response_data.get("scanId")  # Check "id" first (official field name)
+                scan_id = response_data.get("id") or response_data.get(
+                    "scanId"
+                )  # Check "id" first (official field name)
             elif isinstance(response_data, str):
                 scan_id = response_data
             else:
                 scan_id = None
-            
+
             if not scan_id:
                 if DEBUG_MODE:
                     print(f"DEBUG: getInfo response type: {type(response_data)}")
-                    print(f"DEBUG: getInfo response content: {response_data}")
-                raise RuntimeError(f"No scan ID returned by getInfo. Response: {response_data}")
+                    print(
+                        f"DEBUG: getInfo response content: {str(response_data)[:200]}"
+                    )
+                raise RuntimeError(
+                    f"No scan ID returned by getInfo. Response: {str(response_data)[:200]}"
+                )
             return scan_id
-            
+
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
                 # Token expired, refresh and retry
@@ -1408,13 +1584,19 @@ def post_workspace_info(workspace_ids: List[str], max_retries: int = 3) -> str:
                 refresh_access_token()
                 continue  # Retry with new token
             elif e.response.status_code == 429:  # Rate limit exceeded
-                retry_after = int(e.response.headers.get('Retry-After', 60))  # Default to 60 seconds
-                print(f"⚠️ Rate limit exceeded (429). Waiting {retry_after} seconds before retry {attempt + 1}/{max_retries}...")
+                retry_after = int(
+                    e.response.headers.get("Retry-After", 60)
+                )  # Default to 60 seconds
+                print(
+                    f"⚠️ Rate limit exceeded (429). Waiting {retry_after} seconds before retry {attempt + 1}/{max_retries}..."
+                )
                 if attempt < max_retries - 1:
                     time.sleep(retry_after)
                 else:
-                    print(f"❌ Rate limit exceeded. Maximum retries reached. Please wait at least 1 hour before trying again.")
-                    print(f"   API Limits: 500 requests/hour, 16 simultaneous requests")
+                    print(
+                        "❌ Rate limit exceeded. Maximum retries reached. Please wait at least 1 hour before trying again."
+                    )
+                    print("   API Limits: 500 requests/hour, 16 simultaneous requests")
                     raise
             else:
                 raise
@@ -1426,14 +1608,16 @@ def poll_scan_status(scan_id: str) -> None:
     while True:
         # Auto-refresh token if close to expiry
         refresh_access_token()
-        
+
         try:
             _track_api_call()  # Track API usage
-            r = requests.get(url, headers=HEADERS, timeout=30)
-            
+            r = _get_http_session().get(url, headers=HEADERS, timeout=30)
+
             if r.status_code == 202:
                 if time.time() - start > SCAN_TIMEOUT_MINUTES * 60:
-                    raise TimeoutError(f"Scan {scan_id} timed out after {SCAN_TIMEOUT_MINUTES} minutes.")
+                    raise TimeoutError(
+                        f"Scan {scan_id} timed out after {SCAN_TIMEOUT_MINUTES} minutes."
+                    )
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
             r.raise_for_status()
@@ -1444,7 +1628,9 @@ def poll_scan_status(scan_id: str) -> None:
             if status in {"Failed", "Cancelled"}:
                 raise RuntimeError(f"Scan {scan_id} ended with status: {status}")
             if time.time() - start > SCAN_TIMEOUT_MINUTES * 60:
-                raise TimeoutError(f"Scan {scan_id} timed out after {SCAN_TIMEOUT_MINUTES} minutes.")
+                raise TimeoutError(
+                    f"Scan {scan_id} timed out after {SCAN_TIMEOUT_MINUTES} minutes."
+                )
             time.sleep(POLL_INTERVAL_SECONDS)
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
@@ -1453,9 +1639,13 @@ def poll_scan_status(scan_id: str) -> None:
                 refresh_access_token()
                 continue  # Retry with new token
             elif e.response.status_code == 429:
-                retry_after = int(e.response.headers.get('Retry-After', 60))
-                print(f"⚠️  Rate limit hit while polling scan status. Cooling down for {retry_after} seconds...")
-                print(f"   This won't count against the timeout. Scan will continue after cooldown.")
+                retry_after = int(e.response.headers.get("Retry-After", 60))
+                print(
+                    f"⚠️  Rate limit hit while polling scan status. Cooling down for {retry_after} seconds..."
+                )
+                print(
+                    "   This won't count against the timeout. Scan will continue after cooldown."
+                )
                 time.sleep(retry_after)
                 continue  # Don't count this against timeout, just retry
             raise
@@ -1463,20 +1653,20 @@ def poll_scan_status(scan_id: str) -> None:
 
 def read_scan_result(scan_id: str) -> Dict[str, Any]:
     url = f"{PBI_ADMIN_BASE}/workspaces/scanResult/{scan_id}"
-    
+
     # Auto-refresh token if close to expiry
     refresh_access_token()
-    
+
     # Retry logic for 429 rate limit and 401 authentication errors
     max_retries = 5
     base_wait = 60
-    
+
     for attempt in range(max_retries):
         try:
             _track_api_call()  # Track API usage
-            r = requests.get(url, headers=HEADERS, timeout=30)
+            r = _get_http_session().get(url, headers=HEADERS, timeout=30)
             r.raise_for_status()
-            
+
             return r.json()
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
@@ -1486,9 +1676,15 @@ def read_scan_result(scan_id: str) -> Dict[str, Any]:
                 continue  # Retry with new token
             elif e.response.status_code == 429:
                 if attempt < max_retries - 1:
-                    retry_after = int(e.response.headers.get('Retry-After', base_wait * (2 ** attempt)))
-                    print(f"⚠️  Rate limit hit reading results. Cooling down for {retry_after} seconds...")
-                    print(f"   Attempt {attempt + 1}/{max_retries}. Auto-retrying after cooldown...")
+                    retry_after = int(
+                        e.response.headers.get("Retry-After", base_wait * (2**attempt))
+                    )
+                    print(
+                        f"⚠️  Rate limit hit reading results. Cooling down for {retry_after} seconds..."
+                    )
+                    print(
+                        f"   Attempt {attempt + 1}/{max_retries}. Auto-retrying after cooldown..."
+                    )
                     time.sleep(retry_after)
                     continue
                 else:
@@ -1501,24 +1697,24 @@ def get_scan_result_by_id(
     scan_id: str,
     curated_dir: str = CURATED_DIR,
     table_name: str = "tenant_cloud_connections",
-    merge_with_existing: bool = True
+    merge_with_existing: bool = True,
 ) -> None:
     """
     Retrieves scan result using a scan ID and processes cloud connections.
     This uses the WorkspaceInfo GetScanResult API to fetch previously completed scan results.
-    
+
     The scan result must be from a scan that completed successfully within the last 24 hours.
     Use this function when you have a scan ID from:
     - A previous call to PostWorkspaceInfo API
     - A scan triggered by another process
     - A scan ID stored for later retrieval
-    
+
     Args:
         scan_id: The scan ID (UUID) from a previous scan
         curated_dir: Output directory for curated parquet files
         table_name: Name of the SQL table to create/update
         merge_with_existing: If True, merge with existing data; if False, overwrite
-    
+
     Example:
         # Get result from a scan triggered earlier today
         get_scan_result_by_id(
@@ -1527,36 +1723,41 @@ def get_scan_result_by_id(
         )
     """
     print(f"Fetching scan result for scan ID: {scan_id}")
-    
+
     try:
         payload = read_scan_result(scan_id)
-        
+
         if not payload or not payload.get("workspaces"):
             print(f"Warning: No workspaces found in scan result for {scan_id}")
             return
-        
-        print(f"Retrieved scan result with {len(payload.get('workspaces', []))} workspace(s)")
-        
+
+        print(
+            f"Retrieved scan result with {len(payload.get('workspaces', []))} workspace(s)"
+        )
+
         # Build workspace sidecar from the scan payload
         sidecar = {}
         for ws in payload.get("workspaces", []):
             ws_id = ws.get("id")
             if not ws_id:
                 continue
-            
+
             # Extract workspace admins/owners
             users = ws.get("users") or []
-            admins = [u.get("emailAddress") or u.get("identifier") 
-                      for u in users if u.get("groupUserAccessRight") in {"Admin", "Member"}]
-            
+            admins = [
+                u.get("emailAddress") or u.get("identifier")
+                for u in users
+                if u.get("groupUserAccessRight") in {"Admin", "Member"}
+            ]
+
             sidecar[ws_id] = {
                 "name": ws.get("name", ""),
                 "kind": str(ws.get("type", "")).lower() or "unknown",
-                "users": ", ".join(admins[:5]) if admins else None
+                "users": ", ".join(admins[:5]) if admins else None,
             }
-        
+
         payload["workspace_sidecar"] = sidecar
-        
+
         # Save to lakehouse if available
         if mssparkutils is not None:
             try:
@@ -1565,26 +1766,33 @@ def get_scan_result_by_id(
                 print(f"Saved scan result to: {raw_path}")
             except Exception as e:
                 print(f"Warning: Could not save to lakehouse: {e}")
-        
+
         # Extract connection rows
         rows = flatten_scan_payload(payload, sidecar)
-        
+
         if not rows:
             print("No connection rows extracted from scan result")
             return
-        
+
         print(f"Extracted {len(rows)} connection row(s)")
-        
+
         # Create DataFrame
         df_new = spark.createDataFrame(rows)
-        
+
         if merge_with_existing:
             try:
                 df_existing = spark.read.parquet(curated_dir)
-                df_combined = df_existing.union(df_new).dropDuplicates([
-                    "workspace_id", "workspace_name", "artifact_type", "artifact_id",
-                    "artifact_name", "datasource_type", "target"
-                ])
+                df_combined = df_existing.union(df_new).dropDuplicates(
+                    [
+                        "workspace_id",
+                        "workspace_name",
+                        "artifact_type",
+                        "artifact_id",
+                        "artifact_name",
+                        "datasource_type",
+                        "target",
+                    ]
+                )
                 df_combined.write.mode("overwrite").parquet(curated_dir)
                 print(f"Merged with existing data in {curated_dir}")
             except Exception:
@@ -1593,18 +1801,23 @@ def get_scan_result_by_id(
         else:
             df_new.write.mode("overwrite").parquet(curated_dir)
             print(f"Overwrote data in {curated_dir}")
-        
+
         # Register or refresh SQL table
         _validate_sql_identifier(table_name, "table name")
+        _validate_path_for_sql(curated_dir, "curated_dir")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         print(f"Registered table: {table_name}")
-        
+
     except requests.HTTPError as e:
         if e.response.status_code == 404:
-            print(f"Error: Scan ID {scan_id} not found. The scan may have expired (>24 hours) or never existed.")
+            print(
+                f"Error: Scan ID {scan_id} not found. The scan may have expired (>24 hours) or never existed."
+            )
         elif e.response.status_code == 401:
-            print(f"Error: Authentication failed. Ensure you have Fabric Admin permissions.")
+            print(
+                "Error: Authentication failed. Ensure you have Fabric Admin permissions."
+            )
         else:
             print(f"HTTP Error {e.response.status_code}: {e}")
         raise
@@ -1612,20 +1825,30 @@ def get_scan_result_by_id(
         print(f"Error processing scan result: {e}")
         raise
 
+
 # --- Batch runner ---
 
-def run_one_batch(batch_meta: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def run_one_batch(
+    batch_meta: List[Dict[str, Any]], scan_mode: str = "full"
+) -> Dict[str, Any]:
+    """Run a single batch through post → poll → read, build sidecar, save raw JSON.
+
+    Args:
+        batch_meta: List of workspace dicts with at least 'id' key.
+        scan_mode: 'full' includes capacity metadata in sidecar; 'incremental' builds lighter sidecar.
+    """
     ids = [w.get("id") for w in batch_meta if w.get("id")]
     scan_id = post_workspace_info(ids)
     poll_scan_status(scan_id)
     payload = read_scan_result(scan_id)
-    
+
     # Extract workspace users/owners from scan result
     ws_users_map = {}
     workspaces_data = payload.get("workspaces") if isinstance(payload, dict) else []
     if not isinstance(workspaces_data, list):
         workspaces_data = []
-    
+
     for ws in workspaces_data:
         if not isinstance(ws, dict):
             continue
@@ -1633,85 +1856,92 @@ def run_one_batch(batch_meta: List[Dict[str, Any]]) -> Dict[str, Any]:
         users = ws.get("users") or []
         if not isinstance(users, list):
             users = []
-        # Get workspace admins/owners
-        admins = [u.get("emailAddress") or u.get("identifier") 
-                  for u in users if isinstance(u, dict) and u.get("workspaceUserAccessRight") in {"Admin", "Member"}]
-        ws_users_map[ws_id] = ", ".join(admins[:5]) if admins else None  # Limit to first 5
-    
-    # Build sidecar with capacity metadata from scan result
+        admins = [
+            u.get("emailAddress") or u.get("identifier")
+            for u in users
+            if isinstance(u, dict)
+            and u.get("workspaceUserAccessRight") in {"Admin", "Member"}
+        ]
+        ws_users_map[ws_id] = ", ".join(admins[:5]) if admins else None
+
+    # Build sidecar — full mode enriches with capacity info from scan result
     sidecar = {}
-    for ws in workspaces_data:
-        if not isinstance(ws, dict):
-            continue
-        ws_id = ws.get("id")
-        if not ws_id:
-            continue
-        
-        # Extract capacity information from workspace
-        capacity_id = ws.get("capacityId")
-        is_dedicated = ws.get("isOnDedicatedCapacity", False)
-        
-        # Determine capacity name
-        if not is_dedicated or not capacity_id:
-            capacity_name = "Shared"
-        else:
-            # Use capacityName if available, otherwise create identifier from ID
-            capacity_name = ws.get("capacityName") or f"Capacity_{capacity_id[:8]}"
-        
-        sidecar[ws_id] = {
-            "name": ws.get("name", ""),
-            "kind": (str(ws.get("type")).lower() if ws.get("type") else "unknown"),
-            "users": ws_users_map.get(ws_id),
-            "capacity_id": capacity_id,
-            "capacity_name": capacity_name,
-            "is_dedicated_capacity": is_dedicated
-        }
-    
-    # Add metadata for workspaces from batch_meta that weren't in scan result
+    include_capacity = scan_mode == "full"
+
+    if include_capacity:
+        for ws in workspaces_data:
+            if not isinstance(ws, dict):
+                continue
+            ws_id = ws.get("id")
+            if not ws_id:
+                continue
+            capacity_id = ws.get("capacityId")
+            is_dedicated = ws.get("isOnDedicatedCapacity", False)
+            if not is_dedicated or not capacity_id:
+                capacity_name = "Shared"
+            else:
+                capacity_name = ws.get("capacityName") or f"Capacity_{capacity_id[:8]}"
+            sidecar[ws_id] = {
+                "name": ws.get("name", ""),
+                "kind": (str(ws.get("type")).lower() if ws.get("type") else "unknown"),
+                "users": ws_users_map.get(ws_id),
+                "capacity_id": capacity_id,
+                "capacity_name": capacity_name,
+                "is_dedicated_capacity": is_dedicated,
+            }
+
+    # Fill in any workspaces from batch_meta not already in sidecar
     for w in batch_meta:
         ws_id = w.get("id")
         if ws_id and ws_id not in sidecar:
-            sidecar[ws_id] = {
+            entry = {
                 "name": w.get("name", ""),
                 "kind": (str(w.get("type")).lower() if w.get("type") else "unknown"),
                 "users": ws_users_map.get(ws_id),
-                "capacity_id": None,
-                "capacity_name": "Shared",
-                "is_dedicated_capacity": False
             }
+            if include_capacity:
+                entry["capacity_id"] = None
+                entry["capacity_name"] = "Shared"
+                entry["is_dedicated_capacity"] = False
+            sidecar[ws_id] = entry
+
     payload["workspace_sidecar"] = sidecar
+
+    # Persist raw JSON
+    raw_subdir = scan_mode  # "full" or "incremental"
     if RUNNING_IN_FABRIC and mssparkutils is not None:
         try:
-            raw_path = f"{_to_lakehouse_path(RAW_DIR)}/full/{scan_id}.json"
+            raw_path = f"{_to_lakehouse_path(RAW_DIR)}/{raw_subdir}/{scan_id}.json"
             mssparkutils.fs.put(raw_path, json.dumps(payload))
         except Exception:
             pass
     elif not RUNNING_IN_FABRIC:
-        # Save locally and optionally upload to lakehouse
-        local_raw_path = Path(RAW_DIR) / "full" / f"{scan_id}.json"
+        local_raw_path = Path(RAW_DIR) / raw_subdir / f"{scan_id}.json"
         local_raw_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(local_raw_path, 'w') as f:
+        with open(local_raw_path, "w") as f:
             json.dump(payload, f)
-        
         if UPLOAD_TO_LAKEHOUSE and LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
             upload_to_fabric_lakehouse(
                 str(local_raw_path),
                 f"{LAKEHOUSE_UPLOAD_PATH}/{scan_id}.json",
                 LAKEHOUSE_WORKSPACE_ID,
-                LAKEHOUSE_ID
+                LAKEHOUSE_ID,
             )
-    
-    # Show API usage stats periodically
-    stats = get_api_call_stats()
-    if stats['calls'] % 50 == 0:  # Every 50 calls
-        print_api_call_stats()
-    
+
+    # Show API usage stats periodically (full scans only)
+    if scan_mode == "full":
+        stats = get_api_call_stats()
+        if stats["calls"] % 50 == 0:
+            print_api_call_stats()
+
     return payload
+
 
 # --- Flatten helpers ---
 
+
 def _lower_or(x, default="unknown"):
-    return (str(x).lower() if x is not None else default)
+    return str(x).lower() if x is not None else default
 
 
 def _build_target(server, database, endpoint):
@@ -1728,76 +1958,129 @@ def _build_target(server, database, endpoint):
 
 def _validate_sql_identifier(name: str, label: str = "identifier") -> None:
     """Validate that a string is safe to use in a SQL statement (alphanumeric, underscores, dots only)."""
-    if not re.match(r'^[a-zA-Z0-9_\.]+$', name):
-        raise ValueError(f"Invalid {label} '{name}'. Only alphanumeric characters, underscores, and dots are allowed.")
+    if not re.match(r"^[a-zA-Z0-9_\.]+$", name):
+        raise ValueError(
+            f"Invalid {label} '{name}'. Only alphanumeric characters, underscores, and dots are allowed."
+        )
+
+
+def _validate_path_for_sql(path: str, label: str = "path") -> None:
+    """Validate that a file path is safe to interpolate into a Spark SQL LOCATION clause.
+
+    Rejects paths containing characters or patterns that could enable SQL injection
+    via the LOCATION string literal (e.g., single quotes, semicolons, SQL keywords).
+    """
+    if not path or not isinstance(path, str):
+        raise ValueError(f"Invalid {label}: must be a non-empty string.")
+
+    # Reject characters that could break out of a SQL string literal or inject commands
+    _DANGEROUS_CHARS = re.compile(r"[;'\"\\`]")
+    if _DANGEROUS_CHARS.search(path):
+        raise ValueError(
+            f"Invalid {label} '{path}'. "
+            "Path must not contain single quotes, double quotes, semicolons, backticks, or backslashes."
+        )
+
+    # Reject SQL keywords that have no business being in a filesystem path
+    _SQL_KEYWORDS = re.compile(
+        r"\b(DROP|DELETE|INSERT|UPDATE|ALTER|CREATE|EXEC|UNION|SELECT|FROM|WHERE|INTO)\b",
+        re.IGNORECASE,
+    )
+    if _SQL_KEYWORDS.search(path):
+        raise ValueError(
+            f"Invalid {label} '{path}'. Path must not contain SQL keywords."
+        )
+
+    # Reject comment sequences
+    if "--" in path or "/*" in path:
+        raise ValueError(
+            f"Invalid {label} '{path}'. Path must not contain SQL comment sequences."
+        )
+
+
+_DEDUP_COLS = ["workspace_id", "item_id", "connector", "server", "database", "endpoint"]
 
 
 def _save_data(rows, curated_dir, table_name, mode="overwrite"):
-    """Save data using Spark (Fabric) or pandas (local)."""
+    """Save data using Spark (Fabric) or pandas (local).
+
+    Modes:
+        overwrite — replace existing data entirely
+        merge     — union new rows with existing data, deduplicate, then overwrite
+        append    — (Spark only) append without merging
+    """
     if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
         _validate_sql_identifier(table_name, "table name")
-        # Use Spark
+        _validate_path_for_sql(curated_dir, "curated_dir")
         df = spark.createDataFrame(rows)
-        df = (
-            df.withColumn("connector", F.lower(F.coalesce(F.col("connector"), F.lit("unknown"))))
-              .dropDuplicates(["workspace_id","item_id","connector","server","database","endpoint"])
-        )
+        df = df.withColumn(
+            "connector", F.lower(F.coalesce(F.col("connector"), F.lit("unknown")))
+        ).dropDuplicates(_DEDUP_COLS)
+        if mode == "merge":
+            try:
+                df_existing = spark.read.parquet(curated_dir)
+                df = df_existing.unionByName(
+                    df, allowMissingColumns=True
+                ).dropDuplicates(_DEDUP_COLS)
+            except Exception:
+                pass  # No existing data yet
+            mode = "overwrite"
         df.write.mode(mode).parquet(curated_dir)
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
         return df.count()
-    
+
     elif PANDAS_AVAILABLE:
-        # Use pandas
-        # Convert Row objects to dicts if needed
-        if rows and hasattr(rows[0], 'asDict'):
+        if rows and hasattr(rows[0], "asDict"):
             data = [row.asDict() for row in rows]
         else:
             data = rows
-        
+
         df = pd.DataFrame(data)
-        
-        # Normalize connector column
-        if 'connector' in df.columns:
-            df['connector'] = df['connector'].fillna('unknown').str.lower()
-        
-        # Drop duplicates
-        df.drop_duplicates(
-            subset=["workspace_id","item_id","connector","server","database","endpoint"],
-            inplace=True
-        )
-        
-        # Save to parquet and CSV
+
+        if "connector" in df.columns:
+            df["connector"] = df["connector"].fillna("unknown").str.lower()
+
+        if mode == "merge":
+            output_path = Path(curated_dir)
+            parquet_file = output_path / f"{table_name}.parquet"
+            try:
+                df_existing = pd.read_parquet(parquet_file)
+                df = pd.concat([df_existing, df], ignore_index=True)
+            except FileNotFoundError:
+                pass
+
+        df.drop_duplicates(subset=_DEDUP_COLS, inplace=True)
+
         output_path = Path(curated_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         parquet_file = output_path / f"{table_name}.parquet"
         csv_file = output_path / f"{table_name}.csv"
-        
+
         df.to_parquet(parquet_file, index=False)
         df.to_csv(csv_file, index=False)
-        
+
         print(f"Saved to: {parquet_file}")
         print(f"Saved to: {csv_file}")
-        
-        # Upload to Fabric Lakehouse if configured
+
         if UPLOAD_TO_LAKEHOUSE and LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
-            print(f"\nUploading to Fabric Lakehouse...")
+            print("\nUploading to Fabric Lakehouse...")
             upload_to_fabric_lakehouse(
                 str(parquet_file),
                 f"{LAKEHOUSE_UPLOAD_PATH}/curated/{table_name}.parquet",
                 LAKEHOUSE_WORKSPACE_ID,
-                LAKEHOUSE_ID
+                LAKEHOUSE_ID,
             )
             upload_to_fabric_lakehouse(
                 str(csv_file),
                 f"{LAKEHOUSE_UPLOAD_PATH}/curated/{table_name}.csv",
                 LAKEHOUSE_WORKSPACE_ID,
-                LAKEHOUSE_ID
+                LAKEHOUSE_ID,
             )
-        
+
         return len(df)
-    
+
     else:
         raise RuntimeError("Neither Spark nor pandas available. Cannot save data.")
 
@@ -1813,181 +2096,203 @@ def _create_row(data_dict):
 def classify_connection_direction(data):
     """
     Classify connections as inbound, outbound, or internal based on connector and target analysis.
-    
+
     Args:
         data: DataFrame (pandas or Spark) with connection information
-    
+
     Returns:
         DataFrame with added 'direction' column
     """
+
     def get_direction(connector, server, endpoint):
-        connector = str(connector).lower() if connector else ''
-        server = str(server).lower() if server else ''
-        endpoint = str(endpoint).lower() if endpoint else ''
-        
+        connector = str(connector).lower() if connector else ""
+        server = str(server).lower() if server else ""
+        endpoint = str(endpoint).lower() if endpoint else ""
+
         # Patterns indicating OUTBOUND (Fabric connecting to external)
         outbound_patterns = [
-            'snowflake', 'salesforce', 'dynamics365', 'rest', 'web',
-            'azuresqldatabase', 's3', 'oracle', 'mysql', 'postgresql',
-            'sharepoint', 'kusto', 'synapse'
+            "snowflake",
+            "salesforce",
+            "dynamics365",
+            "rest",
+            "web",
+            "azuresqldatabase",
+            "s3",
+            "oracle",
+            "mysql",
+            "postgresql",
+            "sharepoint",
+            "kusto",
+            "synapse",
         ]
-        
+
         # Patterns indicating INTERNAL (Fabric-to-Fabric)
-        internal_patterns = [
-            'onelake', 'fabriclakehouse', 'lakehouse'
-        ]
-        
+        internal_patterns = ["onelake", "fabriclakehouse", "lakehouse"]
+
         # Outbound: connecting to external cloud services
         if any(pattern in connector for pattern in outbound_patterns):
-            return 'outbound'
-        
+            return "outbound"
+
         # Internal: Fabric-to-Fabric connections
         if any(pattern in connector for pattern in internal_patterns):
-            return 'internal'
-        
+            return "internal"
+
         # Check server/endpoint for external domains
         external_domains = [
-            '.windows.net', '.snowflakecomputing.com',
-            '.salesforce.com', '.dynamics.com', '.azure.com'
+            ".windows.net",
+            ".snowflakecomputing.com",
+            ".salesforce.com",
+            ".dynamics.com",
+            ".azure.com",
         ]
-        
+
         for domain in external_domains:
             if domain in server or domain in endpoint:
                 # External domain but check if it's Fabric-related
-                if 'onelake' not in server and 'fabric' not in server:
-                    return 'outbound'
-        
-        return 'unknown'
-    
+                if "onelake" not in server and "fabric" not in server:
+                    return "outbound"
+
+        return "unknown"
+
     if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
         # Spark DataFrame
         from pyspark.sql.functions import udf
         from pyspark.sql.types import StringType
-        
+
         direction_udf = udf(get_direction, StringType())
-        return data.withColumn('direction', direction_udf(
-            F.col('connector'),
-            F.col('server'),
-            F.col('endpoint')
-        ))
+        return data.withColumn(
+            "direction",
+            direction_udf(F.col("connector"), F.col("server"), F.col("endpoint")),
+        )
     else:
         # Pandas DataFrame
         data = data.copy()
-        data['direction'] = data.apply(
-            lambda row: get_direction(row.get('connector'), row.get('server'), row.get('endpoint')),
-            axis=1
+        data["direction"] = data.apply(
+            lambda row: get_direction(
+                row.get("connector"), row.get("server"), row.get("endpoint")
+            ),
+            axis=1,
         )
         return data
 
 
-def get_activity_events(days_back: int = 30, activity_filter: str = None) -> List[Dict[str, Any]]:
+def get_activity_events(
+    days_back: int = 30, activity_filter: str = None
+) -> List[Dict[str, Any]]:
     """
     Get Power BI activity events to detect inbound connections.
-    
+
     Args:
         days_back: Number of days of history to retrieve
         activity_filter: Optional activity type to filter (e.g., 'GetDataset', 'ExecuteQueries')
-    
+
     Returns:
         List of activity event dictionaries
     """
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days_back)
-    
+
     url = f"{PBI_ADMIN_BASE}/activityevents"
-    
+
     all_events = []
     current_date = start_date
-    
+
     # Activity events API requires requests in 24-hour windows
     while current_date < end_date:
         window_end = min(current_date + timedelta(days=1), end_date)
-        
+
         # Format timestamps to match Microsoft's example with 7 decimal places
         params = {
             "startDateTime": current_date.strftime("%Y-%m-%dT%H:%M:%S.0000000Z"),
-            "endDateTime": window_end.strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
+            "endDateTime": window_end.strftime("%Y-%m-%dT%H:%M:%S.0000000Z"),
         }
-        
+
         continuation_token = None
-        
+
         while True:
             if continuation_token:
                 params["continuationToken"] = continuation_token
-            
+
             try:
-                r = requests.get(url, headers=HEADERS, params=params, timeout=30)
+                r = _get_http_session().get(
+                    url, headers=HEADERS, params=params, timeout=30
+                )
                 r.raise_for_status()
                 data = r.json()
-                
+
                 events = data.get("activityEventEntities", [])
-                
+
                 # Apply filter if specified
                 if activity_filter:
                     events = [e for e in events if e.get("Activity") == activity_filter]
-                
+
                 all_events.extend(events)
-                
+
                 continuation_token = data.get("continuationToken")
                 if not continuation_token:
                     break
-                    
+
             except requests.exceptions.HTTPError as e:
                 print(f"Warning: Activity event API error: {e}")
                 break
-        
+
         current_date = window_end
         time.sleep(0.5)  # Rate limit protection
-    
+
     return all_events
 
 
 def get_inbound_api_activity(days_back: int = 30) -> List[Dict[str, Any]]:
     """
     Get external API usage events showing applications/users accessing your Power BI resources.
-    
+
     Args:
         days_back: Number of days of history to analyze
-    
+
     Returns:
         List of formatted activity records showing inbound API access
     """
     print(f"Fetching activity events (last {days_back} days)...")
-    
+
     # Activities that indicate external access to your resources
     inbound_activities = [
-        'GetDataset', 'ExecuteQueries', 'AnalyzeInExcel',
-        'ExportReport', 'ViewReport', 'GetTile',
-        'GenerateEmbedToken', 'GetDashboard'
+        "GetDataset",
+        "ExecuteQueries",
+        "AnalyzeInExcel",
+        "ExportReport",
+        "ViewReport",
+        "GetTile",
+        "GenerateEmbedToken",
+        "GetDashboard",
     ]
-    
+
     all_events = get_activity_events(days_back=days_back)
-    
+
     # Filter and format events
     inbound_records = []
     for event in all_events:
-        activity = event.get('Activity')
-        
+        activity = event.get("Activity")
+
         if activity in inbound_activities:
             # Exclude browser-based access (focus on API/programmatic)
-            user_agent = event.get('UserAgent', '')
-            if user_agent and not user_agent.startswith('Mozilla'):
+            user_agent = event.get("UserAgent", "")
+            if user_agent and not user_agent.startswith("Mozilla"):
                 record = {
-                    'timestamp': event.get('CreationTime'),
-                    'activity': activity,
-                    'user': event.get('UserId'),
-                    'client_ip': event.get('ClientIP'),
-                    'user_agent': user_agent,
-                    'workspace_id': event.get('WorkspaceId'),
-                    'workspace_name': event.get('WorkspaceName'),
-                    'dataset_id': event.get('DatasetId'),
-                    'dataset_name': event.get('DatasetName'),
-                    'report_id': event.get('ReportId'),
-                    'report_name': event.get('ReportName'),
-                    'is_success': event.get('IsSuccess', True)
+                    "timestamp": event.get("CreationTime"),
+                    "activity": activity,
+                    "user": event.get("UserId"),
+                    "client_ip": event.get("ClientIP"),
+                    "user_agent": user_agent,
+                    "workspace_id": event.get("WorkspaceId"),
+                    "workspace_name": event.get("WorkspaceName"),
+                    "dataset_id": event.get("DatasetId"),
+                    "dataset_name": event.get("DatasetName"),
+                    "report_id": event.get("ReportId"),
+                    "report_name": event.get("ReportName"),
+                    "is_success": event.get("IsSuccess", True),
                 }
                 inbound_records.append(record)
-    
+
     print(f"Found {len(inbound_records)} inbound API activity events")
     return inbound_records
 
@@ -1996,359 +2301,356 @@ def analyze_connection_directionality(
     scanner_results_path: str = None,
     include_activity_logs: bool = False,
     activity_days_back: int = 30,
-    output_dir: str = None
+    output_dir: str = None,
 ):
     """
     Comprehensive analysis of connection directionality (outbound vs inbound).
-    
+
     Args:
         scanner_results_path: Path to scanner results (parquet file or SQL table)
         include_activity_logs: Whether to analyze Activity Event API for inbound connections
         activity_days_back: Days of activity history to analyze
         output_dir: Directory to save analysis results
-    
+
     Returns:
         Tuple of (outbound_df, inbound_df) where inbound_df is None if not requested
     """
-    print("="*80)
+    print("=" * 80)
     print("Connection Directionality Analysis")
-    print("="*80)
-    
+    print("=" * 80)
+
     # 1. Load scanner results
     if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
         if scanner_results_path:
             df_scanner = spark.read.parquet(scanner_results_path)
         else:
             df_scanner = spark.sql("SELECT * FROM tenant_cloud_connections")
-        
+
         # Classify direction
         df_scanner = classify_connection_direction(df_scanner)
-        
+
         # Show distribution
         print("\n📊 Scanner API Results (Connection Direction):")
-        df_scanner.groupBy('direction').count().show()
-        
+        df_scanner.groupBy("direction").count().show()
+
         # Convert to pandas for consistent output
         df_outbound = df_scanner.toPandas()
-        
+
     elif PANDAS_AVAILABLE:
         if scanner_results_path:
             df_scanner = pd.read_parquet(scanner_results_path)
         else:
-            df_scanner = pd.read_parquet(f"{CURATED_DIR}/tenant_cloud_connections.parquet")
-        
+            df_scanner = pd.read_parquet(
+                f"{CURATED_DIR}/tenant_cloud_connections.parquet"
+            )
+
         # Classify direction
         df_outbound = classify_connection_direction(df_scanner)
-        
+
         # Show distribution
         print("\n📊 Scanner API Results (Connection Direction):")
-        print(df_outbound.groupby('direction')['item_id'].count())
-    
+        print(df_outbound.groupby("direction")["item_id"].count())
+
     else:
         raise RuntimeError("Neither Spark nor pandas available")
-    
+
     # 2. Analyze inbound activity (if enabled)
     df_inbound = None
     if include_activity_logs:
         print(f"\n🔍 Analyzing Activity Event API (last {activity_days_back} days)...")
-        
+
         try:
             inbound_records = get_inbound_api_activity(days_back=activity_days_back)
-            
+
             if inbound_records:
                 df_inbound = pd.DataFrame(inbound_records)
-                
-                print(f"\n📥 Inbound Activity Summary:")
+
+                print("\n📥 Inbound Activity Summary:")
                 print(f"   Total API calls: {len(df_inbound)}")
                 print(f"   Unique users: {df_inbound['user'].nunique()}")
                 print(f"   Unique IPs: {df_inbound['client_ip'].nunique()}")
                 print(f"   Unique workspaces: {df_inbound['workspace_id'].nunique()}")
-                
-                print(f"\n   Top Activities:")
-                print(df_inbound.groupby('activity')['timestamp'].count().sort_values(ascending=False).head(10))
-                
+
+                print("\n   Top Activities:")
+                print(
+                    df_inbound.groupby("activity")["timestamp"]
+                    .count()
+                    .sort_values(ascending=False)
+                    .head(10)
+                )
+
                 # Save if output directory specified
                 if output_dir:
                     output_path = Path(output_dir)
                     output_path.mkdir(parents=True, exist_ok=True)
-                    
+
                     inbound_file = output_path / "inbound_api_activity.parquet"
                     df_inbound.to_parquet(inbound_file, index=False)
-                    
+
                     inbound_csv = output_path / "inbound_api_activity.csv"
                     df_inbound.to_csv(inbound_csv, index=False)
-                    
+
                     print(f"\n💾 Saved inbound activity to: {inbound_file}")
             else:
                 print("\n⚠️  No inbound API activity found (non-browser access only)")
-                
+
         except Exception as e:
             print(f"\n⚠️  Activity event analysis failed: {e}")
-    
+
     # 3. Save classified outbound connections
     if output_dir:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         outbound_file = output_path / "connections_with_direction.parquet"
         df_outbound.to_parquet(outbound_file, index=False)
-        
+
         outbound_csv = output_path / "connections_with_direction.csv"
         df_outbound.to_csv(outbound_csv, index=False)
-        
+
         print(f"\n💾 Saved classified connections to: {outbound_file}")
-    
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("Analysis Complete")
-    print("="*80)
-    
+    print("=" * 80)
+
     return df_outbound, df_inbound
 
 
-def flatten_scan_payload(payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str, str]]) -> List:
+def _build_connection_row(
+    ws_id,
+    ws_name,
+    ws_kind,
+    ws_users,
+    ws_cap_id,
+    ws_cap_name,
+    ws_is_dedicated,
+    item_id,
+    item_name,
+    item_creator,
+    item_modified_by,
+    item_modified_date,
+    item_type="unknown",
+    connector="unknown",
+    server=None,
+    database=None,
+    endpoint=None,
+    connection_scope="Cloud",
+    cloud=None,
+    generation=None,
+):
+    """Assemble one connection row from workspace + item + connection fields."""
+    if cloud is None:
+        cloud = (connection_scope == "Cloud") or (connector in CLOUD_CONNECTORS)
+    return _create_row(
+        {
+            "workspace_id": ws_id,
+            "workspace_name": ws_name,
+            "workspace_kind": ws_kind,
+            "workspace_users": ws_users,
+            "capacity_id": ws_cap_id,
+            "capacity_name": ws_cap_name,
+            "is_dedicated_capacity": ws_is_dedicated,
+            "item_id": item_id,
+            "item_name": item_name,
+            "item_type": item_type,
+            "item_creator": item_creator,
+            "item_modified_by": item_modified_by,
+            "item_modified_date": item_modified_date,
+            "connector": connector,
+            "target": _build_target(server, database, endpoint),
+            "server": server,
+            "database": database,
+            "endpoint": endpoint,
+            "connection_scope": connection_scope,
+            "cloud": cloud,
+            "generation": generation,
+        }
+    )
+
+
+def flatten_scan_payload(
+    payload: Dict[str, Any], ws_sidecar: Dict[str, Dict[str, str]]
+) -> List:
     rows: List = []
-    
-    # Validate payload is a dictionary
+
     if not isinstance(payload, dict):
-        print(f"Warning: flatten_scan_payload received {type(payload).__name__} instead of dict, skipping")
+        print(
+            f"Warning: flatten_scan_payload received {type(payload).__name__} instead of dict, skipping"
+        )
         return rows
-    
+
     workspaces = payload.get("workspaces") or []
     if DEBUG_MODE:
-        print(f"\n[DEBUG] flatten_scan_payload: Processing {len(workspaces)} workspace(s)")
-    
+        print(
+            f"\n[DEBUG] flatten_scan_payload: Processing {len(workspaces)} workspace(s)"
+        )
+
     for ws in workspaces:
-        ws_id   = ws.get("id")
+        ws_id = ws.get("id")
         itemset = ws.get("items") or []
-        wmeta   = ws_sidecar.get(ws_id, {"name": ws.get("name") or "", "kind": _lower_or(ws.get("type")), "users": None, "capacity_id": None, "capacity_name": "Shared", "is_dedicated_capacity": False})
-        ws_name = wmeta.get("name", "")
-        ws_kind = wmeta.get("kind", "unknown")
-        ws_users = wmeta.get("users")
-        ws_capacity_id = wmeta.get("capacity_id")
-        ws_capacity_name = wmeta.get("capacity_name", "Shared")
-        ws_is_dedicated = wmeta.get("is_dedicated_capacity", False)
+        wmeta = ws_sidecar.get(
+            ws_id,
+            {
+                "name": ws.get("name") or "",
+                "kind": _lower_or(ws.get("type")),
+                "users": None,
+                "capacity_id": None,
+                "capacity_name": "Shared",
+                "is_dedicated_capacity": False,
+            },
+        )
+
+        # Workspace-level positional args shared by every row
+        ws_args = (
+            ws_id,
+            wmeta.get("name", ""),
+            wmeta.get("kind", "unknown"),
+            wmeta.get("users"),
+            wmeta.get("capacity_id"),
+            wmeta.get("capacity_name", "Shared"),
+            wmeta.get("is_dedicated_capacity", False),
+        )
 
         for item in itemset:
-            item_id   = item.get("id")
+            item_id = item.get("id")
             item_name = item.get("name")
             item_type = _lower_or(item.get("type"))
-            
+            item_creator = item.get("createdBy") or item.get("configuredBy")
+            item_modified_by = item.get("modifiedBy")
+            item_modified_date = item.get("modifiedDateTime")
+
+            # Item-level positional args shared by every connection
+            item_args = (
+                item_id,
+                item_name,
+                item_creator,
+                item_modified_by,
+                item_modified_date,
+            )
+
             if DEBUG_MODE:
                 print(f"[DEBUG]     Item: '{item_name}' (type: {item_type})")
 
             if item_type in {"semanticmodel", "dataset"}:
-                # Extract item-level metadata
-                item_creator = item.get("createdBy") or item.get("configuredBy")
-                item_modified_by = item.get("modifiedBy")
-                item_modified_date = item.get("modifiedDateTime")
-                
                 datasources = item.get("datasources") or []
                 if DEBUG_MODE:
-                    print(f"[DEBUG]       - SemanticModel has {len(datasources)} datasource(s)")
-                
+                    print(
+                        f"[DEBUG]       - SemanticModel has {len(datasources)} datasource(s)"
+                    )
                 for ds in datasources:
-                    conn      = ds.get("connectionDetails") or {}
+                    conn = ds.get("connectionDetails") or {}
                     connector = _lower_or(conn.get("datasourceType"))
-                    server    = conn.get("server") or conn.get("host")
-                    database  = conn.get("database") or conn.get("db")
-                    gateway_id= ds.get("gatewayId")
-                    connection_scope = "OnPremViaGateway" if gateway_id else "Cloud"
-                    cloud_flag       = (connection_scope == "Cloud") or (connector in CLOUD_CONNECTORS)
-                    target    = _build_target(server, database, None)
-                    rows.append(_create_row({
-                        "workspace_id":   ws_id,
-                        "workspace_name": ws_name,
-                        "workspace_kind": ws_kind,
-                        "workspace_users": ws_users,
-                        "capacity_id":    ws_capacity_id,
-                        "capacity_name":  ws_capacity_name,
-                        "is_dedicated_capacity": ws_is_dedicated,
-                        "item_id":        item_id,
-                        "item_name":      item_name,
-                        "item_type":      "SemanticModel",
-                        "item_creator":   item_creator,
-                        "item_modified_by": item_modified_by,
-                        "item_modified_date": item_modified_date,
-                        "connector":      connector,
-                        "target":         target,
-                        "server":         server,
-                        "database":       database,
-                        "endpoint":       None,
-                        "connection_scope": connection_scope,
-                        "cloud":          cloud_flag,
-                        "generation":     None
-                    }))
+                    server = conn.get("server") or conn.get("host")
+                    database = conn.get("database") or conn.get("db")
+                    scope = "OnPremViaGateway" if ds.get("gatewayId") else "Cloud"
+                    rows.append(
+                        _build_connection_row(
+                            *ws_args,
+                            *item_args,
+                            item_type="SemanticModel",
+                            connector=connector,
+                            server=server,
+                            database=database,
+                            connection_scope=scope,
+                        )
+                    )
 
             elif item_type == "dataflow":
-                generation = item.get("generation") or (item.get("properties") or {}).get("generation")
-                item_creator = item.get("createdBy") or item.get("configuredBy")
-                item_modified_by = item.get("modifiedBy")
-                item_modified_date = item.get("modifiedDateTime")
-                
-                sources    = item.get("sources") or item.get("entities") or []
+                generation = item.get("generation") or (
+                    item.get("properties") or {}
+                ).get("generation")
+                sources = item.get("sources") or item.get("entities") or []
                 if DEBUG_MODE:
                     print(f"[DEBUG]       - Dataflow has {len(sources)} source(s)")
-                
                 for src in sources:
-                    connector = _lower_or(src.get("type") or src.get("provider"))
-                    endpoint  = src.get("url") or src.get("path")
-                    connection_scope = "Cloud"
-                    cloud_flag       = (connection_scope == "Cloud") or (connector in CLOUD_CONNECTORS)
-                    target    = _build_target(None, None, endpoint)
-                    rows.append(_create_row({
-                        "workspace_id":   ws_id,
-                        "workspace_name": ws_name,
-                        "workspace_kind": ws_kind,
-                        "workspace_users": ws_users,
-                        "capacity_id":    ws_capacity_id,
-                        "capacity_name":  ws_capacity_name,
-                        "is_dedicated_capacity": ws_is_dedicated,
-                        "item_id":        item_id,
-                        "item_name":      item_name,
-                        "item_type":      "Dataflow",
-                        "item_creator":   item_creator,
-                        "item_modified_by": item_modified_by,
-                        "item_modified_date": item_modified_date,
-                        "connector":      connector,
-                        "target":         target,
-                        "server":         None,
-                        "database":       None,
-                        "endpoint":       endpoint,
-                        "connection_scope": connection_scope,
-                        "cloud":          cloud_flag,
-                        "generation":     generation
-                    }))
+                    rows.append(
+                        _build_connection_row(
+                            *ws_args,
+                            *item_args,
+                            item_type="Dataflow",
+                            connector=_lower_or(src.get("type") or src.get("provider")),
+                            endpoint=src.get("url") or src.get("path"),
+                            generation=generation,
+                        )
+                    )
 
             elif item_type == "pipeline":
-                item_creator = item.get("createdBy") or item.get("configuredBy")
-                item_modified_by = item.get("modifiedBy")
-                item_modified_date = item.get("modifiedDateTime")
-                
                 activities = item.get("activities") or []
                 if DEBUG_MODE:
-                    print(f"[DEBUG]       - Pipeline has {len(activities)} activit(y/ies)")
-                
+                    print(
+                        f"[DEBUG]       - Pipeline has {len(activities)} activit(y/ies)"
+                    )
                 for act in activities:
-                    ref       = act.get("linkedService") or {}
-                    connector = _lower_or(ref.get("type") or act.get("type"))
-                    endpoint  = ref.get("url") or ref.get("endpoint")
-                    gateway_id= ref.get("gatewayId")
-                    connection_scope = "OnPremViaGateway" if gateway_id else "Cloud"
-                    cloud_flag       = (connection_scope == "Cloud") or (connector in CLOUD_CONNECTORS)
-                    target    = _build_target(None, None, endpoint)
-                    rows.append(_create_row({
-                        "workspace_id":   ws_id,
-                        "workspace_name": ws_name,
-                        "workspace_kind": ws_kind,
-                        "workspace_users": ws_users,
-                        "capacity_id":    ws_capacity_id,
-                        "capacity_name":  ws_capacity_name,
-                        "is_dedicated_capacity": ws_is_dedicated,
-                        "item_id":        item_id,
-                        "item_name":      item_name,
-                        "item_type":      "Pipeline",
-                        "item_creator":   item_creator,
-                        "item_modified_by": item_modified_by,
-                        "item_modified_date": item_modified_date,
-                        "connector":      connector,
-                        "target":         target,
-                        "server":         None,
-                        "database":       None,
-                        "endpoint":       endpoint,
-                        "connection_scope": connection_scope,
-                        "cloud":          cloud_flag,
-                        "generation":     None
-                    }))
+                    ref = act.get("linkedService") or {}
+                    scope = "OnPremViaGateway" if ref.get("gatewayId") else "Cloud"
+                    rows.append(
+                        _build_connection_row(
+                            *ws_args,
+                            *item_args,
+                            item_type="Pipeline",
+                            connector=_lower_or(ref.get("type") or act.get("type")),
+                            endpoint=ref.get("url") or ref.get("endpoint"),
+                            connection_scope=scope,
+                        )
+                    )
 
             elif item_type in {"lakehouse", "notebook"}:
-                item_creator = item.get("createdBy") or item.get("configuredBy")
-                item_modified_by = item.get("modifiedBy")
-                item_modified_date = item.get("modifiedDateTime")
-                
-                references = (item.get("connections") or []) + (item.get("lineage") or [])
+                references = (item.get("connections") or []) + (
+                    item.get("lineage") or []
+                )
                 for ref in references:
-                    connector       = _lower_or(ref.get("type"))
-                    endpoint        = ref.get("url") or ref.get("endpoint")
-                    is_cloud_flag   = ref.get("isCloud", True)
-                    connection_scope= "Cloud" if is_cloud_flag else "OnPremViaGateway"
-                    cloud_flag      = (connection_scope == "Cloud") or (connector in CLOUD_CONNECTORS)
-                    target          = _build_target(None, None, endpoint)
-                    rows.append(_create_row({
-                        "workspace_id":   ws_id,
-                        "workspace_name": ws_name,
-                        "workspace_kind": ws_kind,
-                        "workspace_users": ws_users,
-                        "capacity_id":    ws_capacity_id,
-                        "capacity_name":  ws_capacity_name,
-                        "is_dedicated_capacity": ws_is_dedicated,
-                        "item_id":        item_id,
-                        "item_name":      item_name,
-                        "item_type":      item_type.capitalize(),
-                        "item_creator":   item_creator,
-                        "item_modified_by": item_modified_by,
-                        "item_modified_date": item_modified_date,
-                        "connector":      connector,
-                        "target":         target,
-                        "server":         None,
-                        "database":       None,
-                        "endpoint":       endpoint,
-                        "connection_scope": connection_scope,
-                        "cloud":          cloud_flag,
-                        "generation":     None
-                    }))
+                    is_cloud = ref.get("isCloud", True)
+                    rows.append(
+                        _build_connection_row(
+                            *ws_args,
+                            *item_args,
+                            item_type=item_type.capitalize(),
+                            connector=_lower_or(ref.get("type")),
+                            endpoint=ref.get("url") or ref.get("endpoint"),
+                            connection_scope="Cloud"
+                            if is_cloud
+                            else "OnPremViaGateway",
+                        )
+                    )
 
             else:
-                item_creator = item.get("createdBy") or item.get("configuredBy")
-                item_modified_by = item.get("modifiedBy")
-                item_modified_date = item.get("modifiedDateTime")
-                
-                rows.append(_create_row({
-                    "workspace_id":   ws_id,
-                    "workspace_name": ws_name,
-                    "workspace_kind": ws_kind,
-                    "workspace_users": ws_users,
-                    "capacity_id":    ws_capacity_id,
-                    "capacity_name":  ws_capacity_name,
-                    "is_dedicated_capacity": ws_is_dedicated,
-                    "item_id":        item_id,
-                    "item_name":      item_name,
-                    "item_type":      item_type.capitalize(),
-                    "item_creator":   item_creator,
-                    "item_modified_by": item_modified_by,
-                    "item_modified_date": item_modified_date,
-                    "connector":      "unknown",
-                    "target":         None,
-                    "server":         None,
-                    "database":       None,
-                    "endpoint":       None,
-                    "connection_scope": "Cloud",
-                    "cloud":          True,
-                    "generation":     None
-                }))
-    
+                rows.append(
+                    _build_connection_row(
+                        *ws_args,
+                        *item_args,
+                        item_type=item_type.capitalize(),
+                        cloud=True,
+                    )
+                )
+
     if DEBUG_MODE:
         print(f"[DEBUG] flatten_scan_payload: Extracted {len(rows)} connection row(s)")
-    
+
     return rows
+
 
 # --- Capacity Grouping Helper ---
 
-def group_workspaces_by_capacity(workspaces: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+
+def group_workspaces_by_capacity(
+    workspaces: List[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Group workspaces by their capacity ID for organized batch processing.
-    
+
     This enables:
     - Sequential processing by capacity (better organization)
     - Foundation for parallel capacity scanning (Phase 3)
     - Capacity-specific progress tracking
-    
+
     Args:
         workspaces: List of workspace dictionaries from get_all_workspaces()
-    
+
     Returns:
         Dictionary mapping capacity_id -> list of workspaces
         Special key "shared" for workspaces without dedicated capacity
-    
+
     Example:
         {
             "capacity-abc-123": [{"id": "ws1", ...}, {"id": "ws2", ...}],
@@ -2357,23 +2659,23 @@ def group_workspaces_by_capacity(workspaces: List[Dict[str, Any]]) -> Dict[str, 
         }
     """
     capacity_groups = {}
-    
+
     for ws in workspaces:
         capacity_id = ws.get("capacityId")
         is_dedicated = ws.get("isOnDedicatedCapacity", False)
-        
+
         # Determine group key
         if capacity_id and is_dedicated:
             group_key = capacity_id
         else:
             group_key = "shared"
-        
+
         # Initialize group if needed
         if group_key not in capacity_groups:
             capacity_groups[group_key] = []
-        
+
         capacity_groups[group_key].append(ws)
-    
+
     return capacity_groups
 
 
@@ -2384,14 +2686,14 @@ def scan_capacities_parallel(
     max_calls_per_hour: int = 450,
     capacity_filter: List[str] = None,
     exclude_capacities: List[str] = None,
-    capacity_priority: List[str] = None
+    capacity_priority: List[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Scan multiple capacities in parallel with shared rate limiting.
-    
+
     Phase 3 implementation: Enables concurrent scanning of different capacities
     while respecting global API rate limits through SharedRateLimiter.
-    
+
     Args:
         capacity_groups: Dictionary of capacity_id -> list of workspaces
         ws_sidecar: Workspace metadata dictionary
@@ -2400,23 +2702,25 @@ def scan_capacities_parallel(
         capacity_filter: Only scan these capacity IDs (None = all)
         exclude_capacities: Skip these capacity IDs (None = none)
         capacity_priority: Process capacities in this order (rest processed after)
-    
+
     Returns:
         List of scan payloads from all capacities
     """
     # Apply capacity filters
     filtered_groups = {}
-    
+
     if capacity_filter:
         # Only include specified capacities
         for cap_id in capacity_filter:
             if cap_id in capacity_groups:
                 filtered_groups[cap_id] = capacity_groups[cap_id]
             else:
-                print(f"⚠️  Warning: Capacity filter '{cap_id}' not found in discovered capacities")
+                print(
+                    f"⚠️  Warning: Capacity filter '{cap_id}' not found in discovered capacities"
+                )
     else:
         filtered_groups = dict(capacity_groups)
-    
+
     # Exclude capacities
     if exclude_capacities:
         for cap_id in exclude_capacities:
@@ -2424,77 +2728,90 @@ def scan_capacities_parallel(
                 removed_count = len(filtered_groups[cap_id])
                 del filtered_groups[cap_id]
                 print(f"🚫 Excluded capacity '{cap_id}' ({removed_count} workspaces)")
-    
+
     if not filtered_groups:
         print("❌ No capacities to scan after applying filters")
         return []
-    
+
     # Determine processing order
     capacity_ids = list(filtered_groups.keys())
-    
+
     if capacity_priority:
         # Process priority capacities first
-        priority_caps = [cap_id for cap_id in capacity_priority if cap_id in filtered_groups]
+        priority_caps = [
+            cap_id for cap_id in capacity_priority if cap_id in filtered_groups
+        ]
         other_caps = [cap_id for cap_id in capacity_ids if cap_id not in priority_caps]
         ordered_capacity_ids = priority_caps + other_caps
-        
+
         if priority_caps:
-            print(f"\n🎯 Priority capacities (will be processed first): {len(priority_caps)}")
+            print(
+                f"\n🎯 Priority capacities (will be processed first): {len(priority_caps)}"
+            )
             for cap_id in priority_caps:
                 print(f"   - {cap_id}: {len(filtered_groups[cap_id])} workspaces")
     else:
         # Default: Sort by workspace count (largest first)
         ordered_capacity_ids = sorted(
-            capacity_ids,
-            key=lambda x: len(filtered_groups[x]),
-            reverse=True
+            capacity_ids, key=lambda x: len(filtered_groups[x]), reverse=True
         )
-    
-    print(f"\n📊 Parallel Capacity Scanning Configuration:")
+
+    print("\n📊 Parallel Capacity Scanning Configuration:")
     print(f"   Capacities to scan: {len(filtered_groups)}")
     print(f"   Parallel workers: {max_parallel_capacities}")
     print(f"   Total API quota: {max_calls_per_hour} calls/hour")
-    print(f"   Processing order: {'Priority-based' if capacity_priority else 'Largest-first'}")
+    print(
+        f"   Processing order: {'Priority-based' if capacity_priority else 'Largest-first'}"
+    )
     print()
-    
+
     # Initialize shared rate limiter
     rate_limiter = SharedRateLimiter(
         max_calls_per_hour=max_calls_per_hour,
-        max_parallel_workers=max_parallel_capacities
+        max_parallel_workers=max_parallel_capacities,
     )
-    
+
     all_scan_payloads = []
     scan_payloads_lock = threading.Lock()
-    
+
     def scan_single_capacity(cap_id: str, cap_workspaces: List[Dict[str, Any]]) -> None:
         """Scan a single capacity with rate limiting."""
         worker_id = f"capacity_{cap_id}"
         rate_limiter.allocate_worker(worker_id)
-        
-        cap_display = cap_id if cap_id != "shared" else "Shared Capacity"
+
         print(f"\n🔄 [{worker_id}] Starting scan: {len(cap_workspaces)} workspaces")
-        
+
         # Create batches for this capacity
-        ws_list = [{
-            "id": w.get("id"),
-            "name": w.get("name", ""),
-            "type": (str(w.get("type")).lower() if w.get("type") else "unknown")
-        } for w in cap_workspaces if w.get("id")]
-        
-        batches = [ws_list[i:i+BATCH_SIZE_WORKSPACES] 
-                   for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)]
-        
+        ws_list = [
+            {
+                "id": w.get("id"),
+                "name": w.get("name", ""),
+                "type": (str(w.get("type")).lower() if w.get("type") else "unknown"),
+            }
+            for w in cap_workspaces
+            if w.get("id")
+        ]
+
+        batches = [
+            ws_list[i : i + BATCH_SIZE_WORKSPACES]
+            for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)
+        ]
+
         print(f"   [{worker_id}] Processing {len(batches)} batches")
-        
+
         capacity_payloads = []
-        
+
         for batch_idx, batch in enumerate(batches, 1):
             # Check rate limit quota
             if not rate_limiter.acquire(worker_id, count=1):
-                print(f"   [{worker_id}] ⚠️  Quota exhausted at batch {batch_idx}/{len(batches)}")
-                print(f"   [{worker_id}] Processed {batch_idx-1}/{len(batches)} batches before quota limit")
+                print(
+                    f"   [{worker_id}] ⚠️  Quota exhausted at batch {batch_idx}/{len(batches)}"
+                )
+                print(
+                    f"   [{worker_id}] Processed {batch_idx - 1}/{len(batches)} batches before quota limit"
+                )
                 break
-            
+
             try:
                 # Make API call
                 ids = [w.get("id") for w in batch if w.get("id")]
@@ -2503,71 +2820,81 @@ def scan_capacities_parallel(
                 payload = read_scan_result(scan_id)
                 payload["workspace_sidecar"] = ws_sidecar
                 capacity_payloads.append(payload)
-                
+
                 if batch_idx % 10 == 0 or batch_idx == len(batches):
-                    print(f"   [{worker_id}] Progress: {batch_idx}/{len(batches)} batches")
-                    
+                    print(
+                        f"   [{worker_id}] Progress: {batch_idx}/{len(batches)} batches"
+                    )
+
             except Exception as e:
                 print(f"   [{worker_id}] ❌ Error in batch {batch_idx}: {e}")
                 rate_limiter.release(worker_id, count=1)  # Return quota
                 continue
-        
+
         # Add to global results
         with scan_payloads_lock:
             all_scan_payloads.extend(capacity_payloads)
-        
-        print(f"   [{worker_id}] ✅ Completed: {len(capacity_payloads)} batches scanned")
-    
+
+        print(
+            f"   [{worker_id}] ✅ Completed: {len(capacity_payloads)} batches scanned"
+        )
+
     # Execute parallel scanning
-    print(f"\n{'='*70}")
-    print(f"Starting parallel capacity scanning...")
-    print(f"{'='*70}\n")
-    
+    print(f"\n{'=' * 70}")
+    print("Starting parallel capacity scanning...")
+    print(f"{'=' * 70}\n")
+
     with ThreadPoolExecutor(max_workers=max_parallel_capacities) as executor:
         futures = {
-            executor.submit(scan_single_capacity, cap_id, filtered_groups[cap_id]): cap_id
+            executor.submit(
+                scan_single_capacity, cap_id, filtered_groups[cap_id]
+            ): cap_id
             for cap_id in ordered_capacity_ids
         }
-        
+
         for future in as_completed(futures):
             cap_id = futures[future]
             try:
                 future.result()
             except Exception as e:
                 print(f"❌ Capacity {cap_id} failed: {e}")
-    
+
     # Print final statistics
     stats = rate_limiter.get_stats()
-    print(f"\n{'='*70}")
-    print(f"📊 Parallel Scan Statistics:")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print("📊 Parallel Scan Statistics:")
+    print(f"{'=' * 70}")
     print(f"Total API calls made: {stats['total_calls_made']}")
     print(f"Remaining quota: {stats['remaining_quota']}")
     print(f"Average rate: {stats['calls_per_hour_rate']:.1f} calls/hour")
     print(f"Elapsed time: {stats['elapsed_hours']:.2f} hours")
-    print(f"\nPer-capacity quota usage:")
-    for worker_id, remaining in stats['worker_quotas'].items():
+    print("\nPer-capacity quota usage:")
+    for worker_id, remaining in stats["worker_quotas"].items():
         used = rate_limiter.calls_per_worker - remaining
         print(f"   {worker_id}: {used}/{rate_limiter.calls_per_worker} calls used")
-    print(f"{'='*70}\n")
-    
+    print(f"{'=' * 70}\n")
+
     return all_scan_payloads
+
 
 # --- Full tenant scan ---
 
-def full_tenant_scan(include_personal: bool = True,
-                     curated_dir: str = CURATED_DIR,
-                     table_name: str = "tenant_cloud_connections",
-                     group_by_capacity: bool = False,
-                     parallel_capacities: int = 1,
-                     max_calls_per_hour: int = 450,
-                     capacity_filter: List[str] = None,
-                     exclude_capacities: List[str] = None,
-                     capacity_priority: List[str] = None,
-                     workspace_table_source: str = None) -> None:
+
+def full_tenant_scan(
+    include_personal: bool = True,
+    curated_dir: str = CURATED_DIR,
+    table_name: str = "tenant_cloud_connections",
+    group_by_capacity: bool = False,
+    parallel_capacities: int = 1,
+    max_calls_per_hour: int = 450,
+    capacity_filter: List[str] = None,
+    exclude_capacities: List[str] = None,
+    capacity_priority: List[str] = None,
+    workspace_table_source: str = None,
+) -> None:
     """
     Full tenant scan with optional capacity grouping and parallel scanning.
-    
+
     Args:
         include_personal: Include personal workspaces
         curated_dir: Output directory
@@ -2583,63 +2910,83 @@ def full_tenant_scan(include_personal: bool = True,
     # Get workspace list from table or API
     if workspace_table_source:
         if DEBUG_MODE:
-            print(f"[DEBUG] full_tenant_scan: Using workspace table source '{workspace_table_source}'")
-        ws_min = read_workspaces_from_table(workspace_table_source, include_personal=include_personal)
+            print(
+                f"[DEBUG] full_tenant_scan: Using workspace table source '{workspace_table_source}'"
+            )
+        ws_min = read_workspaces_from_table(
+            workspace_table_source, include_personal=include_personal
+        )
         if ws_min is None:
             # Fallback to API if table read failed
             if DEBUG_MODE:
-                print("[DEBUG] Table read failed, falling back to API workspace discovery")
+                print(
+                    "[DEBUG] Table read failed, falling back to API workspace discovery"
+                )
             ws_min = get_all_workspaces(include_personal=include_personal)
         elif DEBUG_MODE:
-            print(f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source")
+            print(
+                f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source"
+            )
     else:
         if DEBUG_MODE:
             print("[DEBUG] full_tenant_scan: Using API workspace discovery")
         ws_min = get_all_workspaces(include_personal=include_personal)
-    
+
     if not ws_min:
         print("No workspaces discovered.")
         return
 
     print(f"Discovered {len(ws_min)} workspaces (include_personal={include_personal}).")
-    
+
     # Warn if very large tenant (>10k workspaces)
     if len(ws_min) > 10000:
         print(f"\n⚠️  LARGE TENANT DETECTED ({len(ws_min)} workspaces)")
         print(f"   Estimated API calls: {(len(ws_min) / 100) * 8:.0f}")
-        print(f"   Estimated duration: {(len(ws_min) / 100) / 52:.1f} hours at MAX_PARALLEL_SCANS={MAX_PARALLEL_SCANS}")
-        print(f"\n💡 RECOMMENDATIONS:")
-        print(f"   1. Run check_scanner_api_health() first to detect API contention")
-        print(f"   2. Consider using full_tenant_scan_chunked() for rate limit safety")
-        print(f"   3. Schedule for off-hours to avoid impacting other users")
-        print(f"   4. After baseline scan, use incremental_update() with hash optimization\n")
+        print(
+            f"   Estimated duration: {(len(ws_min) / 100) / 52:.1f} hours at MAX_PARALLEL_SCANS={MAX_PARALLEL_SCANS}"
+        )
+        print("\n💡 RECOMMENDATIONS:")
+        print("   1. Run check_scanner_api_health() first to detect API contention")
+        print("   2. Consider using full_tenant_scan_chunked() for rate limit safety")
+        print("   3. Schedule for off-hours to avoid impacting other users")
+        print(
+            "   4. After baseline scan, use incremental_update() with hash optimization\n"
+        )
 
     # Build workspace sidecar for metadata
-    ws_sidecar = {w.get("id"): {
-        "name": w.get("name", ""), 
-        "kind": "workspace",
-        "capacity_id": w.get("capacityId"),
-        "capacity_name": w.get("capacityName") or "Shared",
-        "is_dedicated_capacity": w.get("isOnDedicatedCapacity", False)
-    } for w in ws_min if w.get("id")}
-    
+    ws_sidecar = {
+        w.get("id"): {
+            "name": w.get("name", ""),
+            "kind": "workspace",
+            "capacity_id": w.get("capacityId"),
+            "capacity_name": w.get("capacityName") or "Shared",
+            "is_dedicated_capacity": w.get("isOnDedicatedCapacity", False),
+        }
+        for w in ws_min
+        if w.get("id")
+    }
+
     # Optional: Group by capacity for better organization and/or parallel scanning
     if group_by_capacity or parallel_capacities > 1:
         capacity_groups = group_workspaces_by_capacity(ws_min)
-        print(f"\n📊 Grouping workspaces by capacity...")
+        print("\n📊 Grouping workspaces by capacity...")
         print(f"Found {len(capacity_groups)} capacity groups:")
-        
-        for cap_id, cap_workspaces in sorted(capacity_groups.items(), key=lambda x: len(x[1]), reverse=True):
-            cap_name = "Shared Capacity" if cap_id == "shared" else f"Capacity {cap_id[:8]}..."
+
+        for cap_id, cap_workspaces in sorted(
+            capacity_groups.items(), key=lambda x: len(x[1]), reverse=True
+        ):
+            cap_name = (
+                "Shared Capacity" if cap_id == "shared" else f"Capacity {cap_id[:8]}..."
+            )
             print(f"  - {cap_name}: {len(cap_workspaces)} workspaces")
         print()
-        
+
         # Phase 3: Parallel capacity scanning
         if parallel_capacities > 1:
-            print(f"\n🚀 Phase 3: Parallel Capacity Scanning Enabled")
+            print("\n🚀 Phase 3: Parallel Capacity Scanning Enabled")
             print(f"   Parallel workers: {parallel_capacities}")
             print(f"   Total API quota: {max_calls_per_hour} calls/hour\n")
-            
+
             scan_payloads = scan_capacities_parallel(
                 capacity_groups=capacity_groups,
                 ws_sidecar=ws_sidecar,
@@ -2647,79 +2994,111 @@ def full_tenant_scan(include_personal: bool = True,
                 max_calls_per_hour=max_calls_per_hour,
                 capacity_filter=capacity_filter,
                 exclude_capacities=exclude_capacities,
-                capacity_priority=capacity_priority
+                capacity_priority=capacity_priority,
             )
         else:
             # Sequential capacity processing (Phase 2)
             all_scan_payloads = []
-            
-            for cap_idx, (cap_id, cap_workspaces) in enumerate(capacity_groups.items(), 1):
-                cap_name = "Shared Capacity" if cap_id == "shared" else f"Capacity {cap_id[:8]}..."
-                print(f"\n{'='*70}")
-                print(f"📍 Processing Capacity {cap_idx}/{len(capacity_groups)}: {cap_name}")
+
+            for cap_idx, (cap_id, cap_workspaces) in enumerate(
+                capacity_groups.items(), 1
+            ):
+                cap_name = (
+                    "Shared Capacity"
+                    if cap_id == "shared"
+                    else f"Capacity {cap_id[:8]}..."
+                )
+                print(f"\n{'=' * 70}")
+                print(
+                    f"📍 Processing Capacity {cap_idx}/{len(capacity_groups)}: {cap_name}"
+                )
                 print(f"   Workspaces: {len(cap_workspaces)}")
-                print(f"{'='*70}")
-                
+                print(f"{'=' * 70}")
+
                 # Create workspace list for this capacity
-                ws_list = [{
-                    "id":   w.get("id"),
-                    "name": w.get("name", ""),
-                    "type": (str(w.get("type")).lower() if w.get("type") else "unknown")
-                } for w in cap_workspaces if w.get("id")]
-                
-                batches = [ws_list[i:i+BATCH_SIZE_WORKSPACES] for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)]
+                ws_list = [
+                    {
+                        "id": w.get("id"),
+                        "name": w.get("name", ""),
+                        "type": (
+                            str(w.get("type")).lower() if w.get("type") else "unknown"
+                        ),
+                    }
+                    for w in cap_workspaces
+                    if w.get("id")
+                ]
+
+                batches = [
+                    ws_list[i : i + BATCH_SIZE_WORKSPACES]
+                    for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)
+                ]
                 scan_payloads: List[Dict[str, Any]] = []
-                
+
                 print(f"📦 Processing {len(batches)} batches for this capacity...")
-                
+
                 with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
                     futures = [pool.submit(run_one_batch, b) for b in batches]
-                    
+
                     future_iterator = as_completed(futures)
                     if TQDM_AVAILABLE:
-                        future_iterator = tqdm(as_completed(futures), total=len(futures),
-                                              desc=f"{cap_name}", unit="batch")
-                    
+                        future_iterator = tqdm(
+                            as_completed(futures),
+                            total=len(futures),
+                            desc=f"{cap_name}",
+                            unit="batch",
+                        )
+
                     for fut in future_iterator:
                         scan_payloads.append(fut.result())
-                
+
                 print(f"✅ Completed {len(scan_payloads)} batches for {cap_name}")
                 all_scan_payloads.extend(scan_payloads)
-            
-            print(f"\n{'='*70}")
+
+            print(f"\n{'=' * 70}")
             print(f"✅ All {len(capacity_groups)} capacity groups processed")
-            print(f"{'='*70}\n")
-            
+            print(f"{'=' * 70}\n")
+
             # Use all collected payloads
             scan_payloads = all_scan_payloads
-        
+
     else:
         # Original non-grouped processing
-        ws_list = [{
-            "id":   w.get("id"),
-            "name": w.get("name", ""),
-            "type": (str(w.get("type")).lower() if w.get("type") else "unknown")
-        } for w in ws_min if w.get("id")]
+        ws_list = [
+            {
+                "id": w.get("id"),
+                "name": w.get("name", ""),
+                "type": (str(w.get("type")).lower() if w.get("type") else "unknown"),
+            }
+            for w in ws_min
+            if w.get("id")
+        ]
 
-        batches = [ws_list[i:i+BATCH_SIZE_WORKSPACES] for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)]
+        batches = [
+            ws_list[i : i + BATCH_SIZE_WORKSPACES]
+            for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)
+        ]
         scan_payloads: List[Dict[str, Any]] = []
 
         print(f"📦 Processing {len(batches)} batches...")
-    
+
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
             futures = [pool.submit(run_one_batch, b) for b in batches]
-            
+
             # Progress bar if available
             future_iterator = as_completed(futures)
             if TQDM_AVAILABLE:
-                future_iterator = tqdm(as_completed(futures), total=len(futures), 
-                                      desc="Scanning batches", unit="batch")
-            
+                future_iterator = tqdm(
+                    as_completed(futures),
+                    total=len(futures),
+                    desc="Scanning batches",
+                    unit="batch",
+                )
+
             for fut in future_iterator:
                 scan_payloads.append(fut.result())
 
         print(f"Completed {len(scan_payloads)} full scan batches.")
-    
+
     # Continue with flattening (same for both grouped and non-grouped)
     print(f"\n📊 Total scan payloads collected: {len(scan_payloads)}")
 
@@ -2733,31 +3112,37 @@ def full_tenant_scan(include_personal: bool = True,
         return
 
     row_count = _save_data(all_rows, curated_dir, table_name, mode="overwrite")
-    print(f"Full tenant scan completed. Rows saved: {row_count} | Curated path: {curated_dir} | SQL table: {table_name}")
-    
+    print(
+        f"Full tenant scan completed. Rows saved: {row_count} | Curated path: {curated_dir} | SQL table: {table_name}"
+    )
+
     # Show final API usage statistics
     print_api_call_stats()
 
+
 # --- Full tenant scan with rate limit management (for large tenants) ---
 
-def full_tenant_scan_chunked(include_personal: bool = True,
-                              max_batches_per_hour: int = 450,  # Leave buffer under 500/hour limit
-                              curated_dir: str = CURATED_DIR,
-                              table_name: str = "tenant_cloud_connections",
-                              enable_checkpointing: bool = None,
-                              checkpoint_storage: str = None,
-                              group_by_capacity: bool = False,
-                              parallel_capacities: int = 1,
-                              capacity_filter: List[str] = None,
-                              exclude_capacities: List[str] = None,
-                              capacity_priority: List[str] = None,
-                              workspace_table_source: str = None) -> None:
+
+def full_tenant_scan_chunked(
+    include_personal: bool = True,
+    max_batches_per_hour: int = 450,  # Leave buffer under 500/hour limit
+    curated_dir: str = CURATED_DIR,
+    table_name: str = "tenant_cloud_connections",
+    enable_checkpointing: bool = None,
+    checkpoint_storage: str = None,
+    group_by_capacity: bool = False,
+    parallel_capacities: int = 1,
+    capacity_filter: List[str] = None,
+    exclude_capacities: List[str] = None,
+    capacity_priority: List[str] = None,
+    workspace_table_source: str = None,
+) -> None:
     """
     Full tenant scan with automatic rate limit management for very large tenants.
     Processes workspaces in hourly chunks, respecting the 500 API calls/hour limit.
     Merges results incrementally to avoid losing progress.
     Supports checkpoint/resume for long-running scans.
-    
+
     Args:
         include_personal: Include personal workspaces
         max_batches_per_hour: Max API calls per hour (default 450 for safety margin)
@@ -2777,260 +3162,259 @@ def full_tenant_scan_chunked(include_personal: bool = True,
         enable_checkpointing = ENABLE_CHECKPOINTING
     if checkpoint_storage is None:
         checkpoint_storage = CHECKPOINT_STORAGE
-    
+
     # Initialize checkpoint manager
     checkpoint_id = f"full_scan_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
-    checkpoint_mgr = CheckpointManager(checkpoint_id, storage=checkpoint_storage) if enable_checkpointing else None
-    
+    checkpoint_mgr = (
+        CheckpointManager(checkpoint_id, storage=checkpoint_storage)
+        if enable_checkpointing
+        else None
+    )
+
     # Try to load checkpoint
     completed_batch_indices = set()
     start_chunk_idx = 0
-    
+
     if enable_checkpointing and checkpoint_mgr:
         checkpoint = checkpoint_mgr.load_checkpoint()
         if checkpoint:
-            completed_batch_indices = set(checkpoint.get('completed_batch_indices', []))
-            start_chunk_idx = checkpoint.get('next_chunk_idx', 0)
-            print(f"🔄 Resuming from checkpoint: {len(completed_batch_indices)} batches already completed")
-    
+            completed_batch_indices = set(checkpoint.get("completed_batch_indices", []))
+            start_chunk_idx = checkpoint.get("next_chunk_idx", 0)
+            print(
+                f"🔄 Resuming from checkpoint: {len(completed_batch_indices)} batches already completed"
+            )
+
     # Get workspace list from table or API
     if workspace_table_source:
         if DEBUG_MODE:
-            print(f"[DEBUG] full_tenant_scan_chunked: Using workspace table source '{workspace_table_source}'")
-        ws_min = read_workspaces_from_table(workspace_table_source, include_personal=include_personal)
+            print(
+                f"[DEBUG] full_tenant_scan_chunked: Using workspace table source '{workspace_table_source}'"
+            )
+        ws_min = read_workspaces_from_table(
+            workspace_table_source, include_personal=include_personal
+        )
         if ws_min is None:
             # Fallback to API if table read failed
             if DEBUG_MODE:
-                print("[DEBUG] Table read failed, falling back to API workspace discovery")
+                print(
+                    "[DEBUG] Table read failed, falling back to API workspace discovery"
+                )
             ws_min = get_all_workspaces(include_personal=include_personal)
         elif DEBUG_MODE:
-            print(f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source")
+            print(
+                f"[DEBUG] Successfully loaded {len(ws_min)} workspaces from table source"
+            )
     else:
         if DEBUG_MODE:
             print("[DEBUG] full_tenant_scan_chunked: Using API workspace discovery")
         ws_min = get_all_workspaces(include_personal=include_personal)
-    
+
     if not ws_min:
         print("No workspaces discovered.")
         return
 
-    print(f"📊 Discovered {len(ws_min)} workspaces (include_personal={include_personal}).")
-    
+    print(
+        f"📊 Discovered {len(ws_min)} workspaces (include_personal={include_personal})."
+    )
+
     # Optional: Show capacity distribution
     if group_by_capacity:
         capacity_groups = group_workspaces_by_capacity(ws_min)
-        print(f"\n📊 Capacity Distribution:")
-        for cap_id, cap_workspaces in sorted(capacity_groups.items(), key=lambda x: len(x[1]), reverse=True):
+        print("\n📊 Capacity Distribution:")
+        for cap_id, cap_workspaces in sorted(
+            capacity_groups.items(), key=lambda x: len(x[1]), reverse=True
+        ):
             cap_name = "Shared" if cap_id == "shared" else f"Capacity {cap_id[:8]}..."
             print(f"   {cap_name}: {len(cap_workspaces)} workspaces")
         print()
-    
-    ws_list = [{
-        "id":   w.get("id"),
-        "name": w.get("name", ""),
-        "type": (str(w.get("type")).lower() if w.get("type") else "unknown")
-    } for w in ws_min if w.get("id")]
 
-    all_batches = [ws_list[i:i+BATCH_SIZE_WORKSPACES] for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)]
+    ws_list = [
+        {
+            "id": w.get("id"),
+            "name": w.get("name", ""),
+            "type": (str(w.get("type")).lower() if w.get("type") else "unknown"),
+        }
+        for w in ws_min
+        if w.get("id")
+    ]
+
+    all_batches = [
+        ws_list[i : i + BATCH_SIZE_WORKSPACES]
+        for i in range(0, len(ws_list), BATCH_SIZE_WORKSPACES)
+    ]
     total_batches = len(all_batches)
-    
+
     remaining_batches = total_batches - len(completed_batch_indices)
     print(f"📦 Total batches: {total_batches} | Remaining: {remaining_batches}")
-    
+
     if enable_checkpointing:
-        print(f"💾 Checkpointing enabled: Saving every {CHECKPOINT_INTERVAL} batches to {checkpoint_storage}")
-    
+        print(
+            f"💾 Checkpointing enabled: Saving every {CHECKPOINT_INTERVAL} batches to {checkpoint_storage}"
+        )
+
     print(f"⏱️  Estimated time: {remaining_batches / max_batches_per_hour:.1f} hours")
-    print(f"🔄 Processing in chunks of {max_batches_per_hour} batches/hour to respect rate limits...")
-    
+    print(
+        f"🔄 Processing in chunks of {max_batches_per_hour} batches/hour to respect rate limits..."
+    )
+
     # Progress bar for overall scan (if tqdm available)
     pbar_overall = None
     if TQDM_AVAILABLE:
-        pbar_overall = tqdm(total=total_batches, initial=len(completed_batch_indices), 
-                           desc="Overall Progress", unit="batch", position=0)
-    
+        pbar_overall = tqdm(
+            total=total_batches,
+            initial=len(completed_batch_indices),
+            desc="Overall Progress",
+            unit="batch",
+            position=0,
+        )
+
     # Process in hourly chunks
     chunk_range = range(start_chunk_idx, total_batches, max_batches_per_hour)
     for chunk_idx in chunk_range:
         chunk_start = chunk_idx
         chunk_end = min(chunk_idx + max_batches_per_hour, total_batches)
-        
+
         # Filter out already completed batches
-        chunk_batch_indices = [i for i in range(chunk_start, chunk_end) if i not in completed_batch_indices]
+        chunk_batch_indices = [
+            i for i in range(chunk_start, chunk_end) if i not in completed_batch_indices
+        ]
         if not chunk_batch_indices:
-            print(f"⏭️  Skipping chunk {chunk_idx // max_batches_per_hour + 1} (already completed)")
+            print(
+                f"⏭️  Skipping chunk {chunk_idx // max_batches_per_hour + 1} (already completed)"
+            )
             continue
-        
+
         chunk_batches = [all_batches[i] for i in chunk_batch_indices]
-        
-        print(f"\n{'='*60}")
-        print(f"🔹 Chunk {chunk_idx // max_batches_per_hour + 1}: Processing {len(chunk_batches)} batches ({chunk_start+1}-{chunk_end} of {total_batches})")
-        print(f"{'='*60}")
-        
+
+        print(f"\n{'=' * 60}")
+        print(
+            f"🔹 Chunk {chunk_idx // max_batches_per_hour + 1}: Processing {len(chunk_batches)} batches ({chunk_start + 1}-{chunk_end} of {total_batches})"
+        )
+        print(f"{'=' * 60}")
+
         chunk_start_time = time.time()
         scan_payloads: List[Dict[str, Any]] = []
-        
+
         # Progress bar for this chunk (if tqdm available)
         batch_iterator = enumerate(chunk_batches)
         if TQDM_AVAILABLE:
-            batch_iterator = tqdm(batch_iterator, total=len(chunk_batches), 
-                                desc=f"Chunk {chunk_idx // max_batches_per_hour + 1}", 
-                                unit="batch", position=1, leave=False)
-        
+            batch_iterator = tqdm(
+                batch_iterator,
+                total=len(chunk_batches),
+                desc=f"Chunk {chunk_idx // max_batches_per_hour + 1}",
+                unit="batch",
+                position=1,
+                leave=False,
+            )
+
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
-            futures = {pool.submit(run_one_batch, b): (chunk_batch_indices[i], b) for i, b in enumerate(chunk_batches)}
-            
+            futures = {
+                pool.submit(run_one_batch, b): (chunk_batch_indices[i], b)
+                for i, b in enumerate(chunk_batches)
+            }
+
             for fut in as_completed(futures):
                 batch_idx, batch_meta = futures[fut]
                 try:
                     payload = fut.result()
                     scan_payloads.append(payload)
                     completed_batch_indices.add(batch_idx)
-                    
+
                     if pbar_overall:
                         pbar_overall.update(1)
-                    
+
                     # Save checkpoint periodically
-                    if enable_checkpointing and checkpoint_mgr and len(completed_batch_indices) % CHECKPOINT_INTERVAL == 0:
-                        checkpoint_mgr.save_checkpoint({
-                            'completed_batch_indices': list(completed_batch_indices),
-                            'next_chunk_idx': chunk_idx + max_batches_per_hour,
-                            'total_batches': total_batches,
-                            'scan_id': checkpoint_id
-                        })
+                    if (
+                        enable_checkpointing
+                        and checkpoint_mgr
+                        and len(completed_batch_indices) % CHECKPOINT_INTERVAL == 0
+                    ):
+                        checkpoint_mgr.save_checkpoint(
+                            {
+                                "completed_batch_indices": list(
+                                    completed_batch_indices
+                                ),
+                                "next_chunk_idx": chunk_idx + max_batches_per_hour,
+                                "total_batches": total_batches,
+                                "scan_id": checkpoint_id,
+                            }
+                        )
                 except Exception as e:
                     print(f"⚠️  Batch {batch_idx} failed: {e}")
-        
+
         print(f"✅ Completed {len(scan_payloads)} batches in this chunk.")
-        
+
         # Flatten and save this chunk's results
         all_rows = []
         for payload in scan_payloads:
             sidecar = payload.get("workspace_sidecar", {})
             all_rows.extend(flatten_scan_payload(payload, sidecar))
-        
+
         if all_rows:
-            if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
-                df_new = spark.createDataFrame(all_rows)
-                df_new = (
-                    df_new.withColumn("connector", F.lower(F.coalesce(F.col("connector"), F.lit("unknown"))))
-                          .dropDuplicates(["workspace_id","item_id","connector","server","database","endpoint"])
-                )
-                
-                # Merge with existing data if table exists
-                try:
-                    df_existing = spark.read.parquet(curated_dir)
-                    df_combined = df_existing.union(df_new).dropDuplicates(
-                        ["workspace_id","item_id","connector","server","database","endpoint"]
-                    )
-                    df_combined.write.mode("overwrite").parquet(curated_dir)
-                    print(f"💾 Merged {len(all_rows)} new rows with existing data.")
-                except Exception:
-                    # First chunk - no existing data
-                    df_new.write.mode("overwrite").parquet(curated_dir)
-                    print(f"💾 Saved {len(all_rows)} rows (initial write).")
-                
-                # Update SQL table
-                _validate_sql_identifier(table_name, "table name")
-                spark.sql(f"DROP TABLE IF EXISTS {table_name}")
-                spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
-            else:
-                # Pandas (local execution)
-                _save_data(all_rows, curated_dir, table_name, mode="append")
-        
+            row_count = _save_data(all_rows, curated_dir, table_name, mode="merge")
+            print(f"💾 Saved/merged {row_count} rows for this chunk.")
+
         # Save checkpoint after each chunk
         if enable_checkpointing and checkpoint_mgr:
-            checkpoint_mgr.save_checkpoint({
-                'completed_batch_indices': list(completed_batch_indices),
-                'next_chunk_idx': chunk_idx + max_batches_per_hour,
-                'total_batches': total_batches,
-                'scan_id': checkpoint_id
-            })
-        
+            checkpoint_mgr.save_checkpoint(
+                {
+                    "completed_batch_indices": list(completed_batch_indices),
+                    "next_chunk_idx": chunk_idx + max_batches_per_hour,
+                    "total_batches": total_batches,
+                    "scan_id": checkpoint_id,
+                }
+            )
+
         # Check if we need to wait before next chunk
         if chunk_end < total_batches:
             chunk_elapsed = time.time() - chunk_start_time
             wait_time = max(0, 3600 - chunk_elapsed)  # Wait until 1 hour has passed
-            
+
             if wait_time > 60:
-                print(f"\n⏳ Rate limit protection: Waiting {wait_time/60:.1f} minutes before next chunk...")
-                print(f"   (Processed {len(completed_batch_indices)}/{total_batches} batches so far)")
+                print(
+                    f"\n⏳ Rate limit protection: Waiting {wait_time / 60:.1f} minutes before next chunk..."
+                )
+                print(
+                    f"   (Processed {len(completed_batch_indices)}/{total_batches} batches so far)"
+                )
                 time.sleep(wait_time)
             elif wait_time > 0:
                 print(f"⏳ Brief pause: {wait_time:.0f} seconds...")
                 time.sleep(wait_time)
-    
+
     if pbar_overall:
         pbar_overall.close()
-    
+
     # Clear checkpoint after successful completion
     if enable_checkpointing and checkpoint_mgr:
         checkpoint_mgr.clear_checkpoint()
-    
-    print(f"\n{'='*60}")
-    print(f"✅ Full chunked scan completed!")
+
+    print(f"\n{'=' * 60}")
+    print("✅ Full chunked scan completed!")
     print(f"📊 Total batches processed: {total_batches}")
     print(f"💾 SQL table: {table_name}")
     print(f"📁 Curated path: {curated_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
+
 
 # --- Incremental scan ---
 
+
 def run_one_batch_incremental(batch_meta: List[Dict[str, Any]]) -> Dict[str, Any]:
-    ids = [w.get("id") for w in batch_meta if w.get("id")]
-    scan_id = post_workspace_info(ids)
-    poll_scan_status(scan_id)
-    payload = read_scan_result(scan_id)
-    
-    # Extract workspace users/owners from scan result
-    ws_users_map = {}
-    for ws in (payload.get("workspaces") or []):
-        ws_id = ws.get("id")
-        users = ws.get("users") or []
-        # Get workspace admins/owners
-        admins = [u.get("emailAddress") or u.get("identifier") 
-                  for u in users if u.get("workspaceUserAccessRight") in {"Admin", "Member"}]
-        ws_users_map[ws_id] = ", ".join(admins[:5]) if admins else None  # Limit to first 5
-    
-    sidecar = {
-        w.get("id"): {
-            "name": w.get("name", ""),
-            "kind": (str(w.get("type")).lower() if w.get("type") else "unknown"),
-            "users": ws_users_map.get(w.get("id"))
-        } for w in batch_meta if w.get("id")
-    }
-    payload["workspace_sidecar"] = sidecar
-    if RUNNING_IN_FABRIC and mssparkutils is not None:
-        try:
-            raw_path = f"{_to_lakehouse_path(RAW_DIR)}/incremental/{scan_id}.json"
-            mssparkutils.fs.put(raw_path, json.dumps(payload))
-        except Exception:
-            pass
-    elif not RUNNING_IN_FABRIC:
-        # Save locally and optionally upload to lakehouse
-        local_raw_path = Path(RAW_DIR) / "incremental" / f"{scan_id}.json"
-        local_raw_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(local_raw_path, 'w') as f:
-            json.dump(payload, f)
-        
-        if UPLOAD_TO_LAKEHOUSE and LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
-            upload_to_fabric_lakehouse(
-                str(local_raw_path),
-                f"{LAKEHOUSE_UPLOAD_PATH}/{scan_id}.json",
-                LAKEHOUSE_WORKSPACE_ID,
-                LAKEHOUSE_ID
-            )
-    return payload
+    """Backward-compatible wrapper — delegates to run_one_batch with incremental mode."""
+    return run_one_batch(batch_meta, scan_mode="incremental")
 
 
-def incremental_update(modified_since_iso: str,
-                       include_personal: bool = True,
-                       enable_hash_optimization: bool = True,
-                       curated_dir: str = CURATED_DIR,
-                       table_name: str = "tenant_cloud_connections") -> None:
+def incremental_update(
+    modified_since_iso: str,
+    include_personal: bool = True,
+    enable_hash_optimization: bool = True,
+    curated_dir: str = CURATED_DIR,
+    table_name: str = "tenant_cloud_connections",
+) -> None:
     """
     Incremental update with optional hash-based optimization.
-    
+
     Args:
         modified_since_iso: ISO timestamp to filter modified workspaces
         include_personal: Include personal workspaces
@@ -3038,82 +3422,105 @@ def incremental_update(modified_since_iso: str,
         curated_dir: Output directory
         table_name: SQL table name
     """
-    changed_ws = modified_workspace_ids(modified_since_iso, include_personal=include_personal)
+    changed_ws = get_all_workspaces(
+        include_personal=include_personal, modified_since=modified_since_iso
+    )
     if not changed_ws:
         print(f"No modified workspaces since {modified_since_iso}. Nothing to update.")
         return
 
     # Extract workspace IDs from the workspace dictionaries
     changed_ws_ids = [ws.get("id") for ws in changed_ws if ws.get("id")]
-    
-    print(f"Found {len(changed_ws_ids)} modified workspaces since {modified_since_iso} (include_personal={include_personal}).")
-    
+
+    print(
+        f"Found {len(changed_ws_ids)} modified workspaces since {modified_since_iso} (include_personal={include_personal})."
+    )
+
     # Smart filtering: Use stored hash tracker to skip workspaces with recent scans
     workspaces_to_scan = changed_ws_ids
     if enable_hash_optimization and len(changed_ws_ids) > 5:
-        print(f"\n🔍 Using hash-based optimization to reduce API calls...")
+        print("\n🔍 Using hash-based optimization to reduce API calls...")
         try:
             hash_tracker = ConnectionHashTracker(
-                config=type('Config', (), {
-                    'curated_dir': curated_dir,
-                    'tenant_id': TENANT_ID,
-                    'client_id': CLIENT_ID,
-                    'client_secret': CLIENT_SECRET
-                })(),
-                running_in_fabric=RUNNING_IN_FABRIC
+                config=type(
+                    "Config",
+                    (),
+                    {
+                        "curated_dir": curated_dir,
+                        "tenant_id": TENANT_ID,
+                        "client_id": CLIENT_ID,
+                        "client_secret": CLIENT_SECRET,
+                    },
+                )(),
+                running_in_fabric=RUNNING_IN_FABRIC,
             )
-            
+
             # Load stored hashes (no API calls - reads from storage)
             stored_hashes = hash_tracker.get_stored_hashes()
-            
+
             # Filter out workspaces that were scanned recently (within last 24 hours)
             # and haven't been modified since their last scan
-            from datetime import datetime, timedelta, timezone
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
-            
+
             workspaces_to_scan = []
             skipped_recently_scanned = 0
-            
+
             for ws_id in changed_ws_ids:
                 # Check if workspace has stored hash
                 if ws_id in stored_hashes:
-                    last_scan = stored_hashes[ws_id].get('last_scan_time')
+                    last_scan = stored_hashes[ws_id].get("last_scan_time")
                     if last_scan:
                         try:
-                            last_scan_dt = datetime.fromisoformat(last_scan.replace('Z', '+00:00'))
+                            last_scan_dt = datetime.fromisoformat(
+                                last_scan.replace("Z", "+00:00")
+                            )
                             # Skip if scanned within last 24 hours
                             if last_scan_dt > cutoff_time:
                                 skipped_recently_scanned += 1
                                 continue
                         except (ValueError, AttributeError):
                             pass  # Invalid date format, scan anyway
-                
+
                 # Include workspace in scan
                 workspaces_to_scan.append(ws_id)
-            
-            reduction_pct = (skipped_recently_scanned / len(changed_ws_ids) * 100) if changed_ws_ids else 0
-            
-            print(f"✅ Hash optimization complete (no API calls used):")
-            print(f"   Skipped {skipped_recently_scanned} workspaces scanned within last 24 hours")
-            print(f"   Processing {len(workspaces_to_scan)} workspaces ({reduction_pct:.1f}% reduction)")
-            
+
+            reduction_pct = (
+                (skipped_recently_scanned / len(changed_ws_ids) * 100)
+                if changed_ws_ids
+                else 0
+            )
+
+            print("✅ Hash optimization complete (no API calls used):")
+            print(
+                f"   Skipped {skipped_recently_scanned} workspaces scanned within last 24 hours"
+            )
+            print(
+                f"   Processing {len(workspaces_to_scan)} workspaces ({reduction_pct:.1f}% reduction)"
+            )
+
         except Exception as e:
             print(f"⚠️  Hash optimization failed: {e}")
             print(f"   Falling back to scanning all {len(changed_ws_ids)} workspaces")
             workspaces_to_scan = changed_ws_ids
-    
+
     if not workspaces_to_scan:
-        print(f"✅ All workspaces scanned recently. No processing needed.")
+        print("✅ All workspaces scanned recently. No processing needed.")
         return
-    
+
     print(f"\n📊 Scanning {len(workspaces_to_scan)} workspaces with changes...")
 
-    batches = [workspaces_to_scan[i:i+BATCH_SIZE_WORKSPACES] for i in range(0, len(workspaces_to_scan), BATCH_SIZE_WORKSPACES)]
+    batches = [
+        workspaces_to_scan[i : i + BATCH_SIZE_WORKSPACES]
+        for i in range(0, len(workspaces_to_scan), BATCH_SIZE_WORKSPACES)
+    ]
     scan_payloads: List[Dict[str, Any]] = []
 
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SCANS) as pool:
         # Convert workspace IDs to batch metadata
-        batch_metadata = [[{"id": ws_id, "name": "", "type": "Workspace"} for ws_id in batch] for batch in batches]
+        batch_metadata = [
+            [{"id": ws_id, "name": "", "type": "Workspace"} for ws_id in batch]
+            for batch in batches
+        ]
         futures = [pool.submit(run_one_batch_incremental, b) for b in batch_metadata]
         for fut in as_completed(futures):
             scan_payloads.append(fut.result())
@@ -3122,26 +3529,40 @@ def incremental_update(modified_since_iso: str,
 
     all_rows = []
     workspace_connections_for_hash = {}  # Track connections for hash update
-    
+
     for payload in scan_payloads:
         sidecar = payload.get("workspace_sidecar", {})
         rows = flatten_scan_payload(payload, sidecar)
         all_rows.extend(rows)
-        
+
         # Group connections by workspace for hash calculation
         if enable_hash_optimization:
             for row in rows:
-                ws_id = row.get("workspace_id") if isinstance(row, dict) else getattr(row, "workspace_id", None)
+                ws_id = (
+                    row.get("workspace_id")
+                    if isinstance(row, dict)
+                    else getattr(row, "workspace_id", None)
+                )
                 if ws_id:
                     if ws_id not in workspace_connections_for_hash:
                         workspace_connections_for_hash[ws_id] = []
-                    
+
                     conn_data = {
-                        'connector': row.get("connector") if isinstance(row, dict) else getattr(row, "connector", None),
-                        'server': row.get("server") if isinstance(row, dict) else getattr(row, "server", None),
-                        'database': row.get("database") if isinstance(row, dict) else getattr(row, "database", None),
-                        'endpoint': row.get("endpoint") if isinstance(row, dict) else getattr(row, "endpoint", None),
-                        'item_id': row.get("item_id") if isinstance(row, dict) else getattr(row, "item_id", None)
+                        "connector": row.get("connector")
+                        if isinstance(row, dict)
+                        else getattr(row, "connector", None),
+                        "server": row.get("server")
+                        if isinstance(row, dict)
+                        else getattr(row, "server", None),
+                        "database": row.get("database")
+                        if isinstance(row, dict)
+                        else getattr(row, "database", None),
+                        "endpoint": row.get("endpoint")
+                        if isinstance(row, dict)
+                        else getattr(row, "endpoint", None),
+                        "item_id": row.get("item_id")
+                        if isinstance(row, dict)
+                        else getattr(row, "item_id", None),
                     }
                     workspace_connections_for_hash[ws_id].append(conn_data)
 
@@ -3151,10 +3572,12 @@ def incremental_update(modified_since_iso: str,
         if enable_hash_optimization and workspace_connections_for_hash:
             try:
                 hash_tracker = ConnectionHashTracker(
-                    config=type('Config', (), {'curated_dir': curated_dir})(),
-                    running_in_fabric=RUNNING_IN_FABRIC
+                    config=type("Config", (), {"curated_dir": curated_dir})(),
+                    running_in_fabric=RUNNING_IN_FABRIC,
                 )
-                workspace_hashes = hash_tracker.calculate_workspace_hashes(workspace_connections_for_hash)
+                workspace_hashes = hash_tracker.calculate_workspace_hashes(
+                    workspace_connections_for_hash
+                )
                 hash_tracker.save_hashes(workspace_hashes)
                 print(f"Updated hashes for {len(workspace_hashes)} workspaces")
             except Exception as e:
@@ -3162,99 +3585,70 @@ def incremental_update(modified_since_iso: str,
         return
 
     # Merge with existing data
-    if RUNNING_IN_FABRIC and SPARK_AVAILABLE:
-        df_new = spark.createDataFrame(all_rows)
-        df_new = (
-            df_new.withColumn("connector", F.lower(F.coalesce(F.col("connector"), F.lit("unknown"))))
-                  .dropDuplicates(["workspace_id","item_id","connector","server","database","endpoint"])
-        )
-        try:
-            df_existing = spark.read.parquet(curated_dir)
-            df_merged = (
-                df_existing.unionByName(df_new, allowMissingColumns=True)
-                .dropDuplicates(["workspace_id","item_id","connector","server","database","endpoint"])
-            )
-        except Exception:
-            df_merged = df_new
-        df_merged.write.mode("overwrite").parquet(curated_dir)
-        _validate_sql_identifier(table_name, "table name")
-        spark.sql(f"DROP TABLE IF EXISTS {table_name}")
-        spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
-        row_count = df_merged.count()
-    elif PANDAS_AVAILABLE:
-        # Convert to DataFrame
-        data = [row.asDict() if hasattr(row, 'asDict') else row for row in all_rows]
-        df_new = pd.DataFrame(data)
-        if 'connector' in df_new.columns:
-            df_new['connector'] = df_new['connector'].fillna('unknown').str.lower()
-        
-        # Try to merge with existing
-        output_path = Path(curated_dir)
-        parquet_file = output_path / f"{table_name}.parquet"
-        try:
-            df_existing = pd.read_parquet(parquet_file)
-            df_merged = pd.concat([df_existing, df_new], ignore_index=True)
-        except FileNotFoundError:
-            df_merged = df_new
-        
-        df_merged.drop_duplicates(
-            subset=["workspace_id","item_id","connector","server","database","endpoint"],
-            inplace=True
-        )
-        df_merged.to_parquet(parquet_file, index=False)
-        df_merged.to_csv(output_path / f"{table_name}.csv", index=False)
-        row_count = len(df_merged)
-    else:
-        raise RuntimeError("Neither Spark nor pandas available")
+    row_count = _save_data(all_rows, curated_dir, table_name, mode="merge")
 
-    print(f"Incremental update completed. Rows: {row_count} | Curated path: {curated_dir} | SQL table: {table_name}")
-    
+    print(
+        f"Incremental update completed. Rows: {row_count} | Curated path: {curated_dir} | SQL table: {table_name}"
+    )
+
     # Update connection hashes for next incremental scan
     if enable_hash_optimization and workspace_connections_for_hash:
-        print(f"\n💾 Updating connection hashes for {len(workspace_connections_for_hash)} workspaces...")
+        print(
+            f"\n💾 Updating connection hashes for {len(workspace_connections_for_hash)} workspaces..."
+        )
         try:
             hash_tracker = ConnectionHashTracker(
-                config=type('Config', (), {
-                    'curated_dir': curated_dir,
-                    'tenant_id': TENANT_ID,
-                    'client_id': CLIENT_ID,
-                    'client_secret': CLIENT_SECRET
-                })(),
-                running_in_fabric=RUNNING_IN_FABRIC
+                config=type(
+                    "Config",
+                    (),
+                    {
+                        "curated_dir": curated_dir,
+                        "tenant_id": TENANT_ID,
+                        "client_id": CLIENT_ID,
+                        "client_secret": CLIENT_SECRET,
+                    },
+                )(),
+                running_in_fabric=RUNNING_IN_FABRIC,
             )
-            
+
             # Calculate and save hashes
-            workspace_hashes = hash_tracker.calculate_workspace_hashes(workspace_connections_for_hash)
-            
+            workspace_hashes = hash_tracker.calculate_workspace_hashes(
+                workspace_connections_for_hash
+            )
+
             # Extract workspace metadata
             workspace_metadata = {}
             for payload in scan_payloads:
-                for ws in (payload.get("workspaces") or []):
+                for ws in payload.get("workspaces") or []:
                     ws_id = ws.get("id")
                     if ws_id:
                         workspace_metadata[ws_id] = {
-                            'name': ws.get("name", ""),
-                            'type': str(ws.get("type", "")).lower()
+                            "name": ws.get("name", ""),
+                            "type": str(ws.get("type", "")).lower(),
                         }
-            
+
             hash_tracker.save_hashes(workspace_hashes, workspace_metadata)
-            print(f"✅ Saved connection hashes for future incremental scans")
-            
+            print("✅ Saved connection hashes for future incremental scans")
+
         except Exception as e:
             print(f"⚠️  Warning: Failed to save connection hashes: {e}")
-            print(f"   Hash optimization will not be available for next incremental scan")
+            print(
+                "   Hash optimization will not be available for next incremental scan"
+            )
+
 
 # --- JSON Directory Scanner (Lakehouse) ---
+
 
 def scan_json_directory_for_connections(
     json_dir_path: str,
     curated_dir: str = CURATED_DIR,
     table_name: str = "tenant_cloud_connections",
-    merge_with_existing: bool = True
+    merge_with_existing: bool = True,
 ) -> None:
     """
     Scans all JSON files in a lakehouse directory and extracts cloud connection information.
-    
+
     Args:
         json_dir_path: Path to directory containing JSON files (e.g., "lakehouse:/Default/Files/scanner/raw")
         curated_dir: Output directory for curated parquet files
@@ -3262,67 +3656,79 @@ def scan_json_directory_for_connections(
         merge_with_existing: If True, merge with existing data; if False, overwrite
     """
     if mssparkutils is None:
-        raise RuntimeError("JSON directory scanning requires mssparkutils (Fabric environment)")
-    
+        raise RuntimeError(
+            "JSON directory scanning requires mssparkutils (Fabric environment)"
+        )
+
     # Check if single file mode is enabled
     if JSON_SINGLE_FILE_MODE:
         print(f"Single file mode enabled - processing: {JSON_TARGET_FILE}")
         lakehouse_json_path = _to_lakehouse_path(JSON_TARGET_FILE)
-        
+
         # Create a file info object for the single file
         try:
-            file_info = mssparkutils.fs.head(lakehouse_json_path, 0)  # Just to verify file exists
-            # Get file size
-            import subprocess
+            file_info = mssparkutils.fs.head(
+                lakehouse_json_path, 0
+            )  # Just to verify file exists
             # Since we can't get file info directly, we'll proceed with reading
-            json_files = [type('obj', (object,), {'path': lakehouse_json_path, 'size': 0})]  # Dummy size
+            json_files = [
+                type("obj", (object,), {"path": lakehouse_json_path, "size": 0})
+            ]  # Dummy size
         except Exception as e:
             print(f"Error: Could not access file {JSON_TARGET_FILE}: {e}")
             return
     else:
         print(f"Scanning JSON files in directory: {json_dir_path}")
-        
+
         # Convert to lakehouse path if needed
-        lakehouse_json_path = json_dir_path if json_dir_path.startswith(("file:", "abfss:", "lakehouse:")) else _to_lakehouse_path(json_dir_path)
-        
+        lakehouse_json_path = (
+            json_dir_path
+            if json_dir_path.startswith(("file:", "abfss:", "lakehouse:"))
+            else _to_lakehouse_path(json_dir_path)
+        )
+
         try:
             # List all JSON files in directory
             files = mssparkutils.fs.ls(lakehouse_json_path)
-            json_files = [f for f in files if f.path.endswith('.json')]
-            
+            json_files = [f for f in files if f.path.endswith(".json")]
+
             if not json_files:
                 print(f"No JSON files found in {json_dir_path}")
                 return
-            
+
             print(f"Found {len(json_files)} JSON file(s) to process")
         except Exception as e:
             print(f"Error listing directory {json_dir_path}: {e}")
             return
-    
+
     try:
         all_rows = []
         for file_info in json_files:
             try:
                 # Read entire JSON file (supports files up to 2GB)
                 json_path = file_info.path
-                
+
                 # Only check file size if we have it (not in single file mode with dummy size)
-                if hasattr(file_info, 'size') and file_info.size > 0:
+                if hasattr(file_info, "size") and file_info.size > 0:
                     file_size_mb = file_info.size / 1024 / 1024
-                    if file_info.size > 2 * 1024 * 1024 * 1024:  # Skip files larger than 2GB
-                        print(f"  Skipping {json_path}: file too large ({file_size_mb:.1f} MB)")
+                    if (
+                        file_info.size > 2 * 1024 * 1024 * 1024
+                    ):  # Skip files larger than 2GB
+                        print(
+                            f"  Skipping {json_path}: file too large ({file_size_mb:.1f} MB)"
+                        )
                         continue
                     print(f"  Reading {json_path} ({file_size_mb:.1f} MB)...")
                 else:
                     print(f"  Reading {json_path}...")
-                
+
                 # Use Spark to read JSON file - handles large files efficiently
                 # Convert file: URI back to Spark-relative path
                 spark_path = json_path.replace("file:/lakehouse/default/", "")
                 json_text = spark.read.text(spark_path, wholetext=True).first()[0]
-                
+
                 payload = json.loads(json_text)
-                
+
                 # Debug: Show payload structure (only if DEBUG_MODE enabled)
                 if DEBUG_MODE:
                     print(f"  Payload type: {type(payload).__name__}")
@@ -3332,7 +3738,7 @@ def scan_json_directory_for_connections(
                         print(f"  Payload list length: {len(payload)}")
                         if payload and isinstance(payload[0], dict):
                             print(f"  First item keys: {list(payload[0].keys())}")
-                
+
                 # Handle different JSON structures
                 if isinstance(payload, list):
                     # If payload is a list, process each item
@@ -3345,9 +3751,13 @@ def scan_json_directory_for_connections(
                             rows = flatten_scan_payload(item, sidecar)
                             all_rows.extend(rows)
                             if DEBUG_MODE:
-                                print(f"    Item {idx+1}: extracted {len(rows)} row(s)")
+                                print(
+                                    f"    Item {idx + 1}: extracted {len(rows)} row(s)"
+                                )
                         else:
-                            print(f"    Item {idx+1}: skipping non-dict item: {type(item).__name__}")
+                            print(
+                                f"    Item {idx + 1}: skipping non-dict item: {type(item).__name__}"
+                            )
                 elif isinstance(payload, dict):
                     # If payload is a dict, process it directly
                     sidecar = payload.get("workspace_sidecar", {})
@@ -3358,37 +3768,35 @@ def scan_json_directory_for_connections(
                 else:
                     print(f"  Skipping: unexpected type {type(payload).__name__}")
                     continue
-                
+
                 if DEBUG_MODE:
                     print(f"  Completed processing {json_path}")
-                
+
             except json.JSONDecodeError as e:
                 print(f"  Warning: Failed to parse JSON {json_path}: {e}")
                 continue
-                
+
             except Exception as e:
                 print(f"  Warning: Failed to process {json_path}: {e}")
                 continue
-        
+
         if not all_rows:
             print("No connection rows extracted from JSON files.")
             return
-        
+
         # Create DataFrame and deduplicate
         df_new = spark.createDataFrame(all_rows)
-        df_new = (
-            df_new.withColumn("connector", F.lower(F.coalesce(F.col("connector"), F.lit("unknown"))))
-                  .dropDuplicates(["workspace_id","item_id","connector","server","database","endpoint"])
-        )
-        
+        df_new = df_new.withColumn(
+            "connector", F.lower(F.coalesce(F.col("connector"), F.lit("unknown")))
+        ).dropDuplicates(_DEDUP_COLS)
+
         # Merge or overwrite
         if merge_with_existing:
             try:
                 df_existing = spark.read.parquet(curated_dir)
-                df_merged = (
-                    df_existing.unionByName(df_new, allowMissingColumns=True)
-                    .dropDuplicates(["workspace_id","item_id","connector","server","database","endpoint"])
-                )
+                df_merged = df_existing.unionByName(
+                    df_new, allowMissingColumns=True
+                ).dropDuplicates(_DEDUP_COLS)
                 print(f"Merged {df_new.count()} new rows with existing data")
             except Exception:
                 df_merged = df_new
@@ -3396,17 +3804,18 @@ def scan_json_directory_for_connections(
         else:
             df_merged = df_new
             print("Overwriting existing data")
-        
+
         # Write output
         df_merged.write.mode("overwrite").parquet(curated_dir)
-        
+
         _validate_sql_identifier(table_name, "table name")
+        _validate_path_for_sql(curated_dir, "curated_dir")
         spark.sql(f"DROP TABLE IF EXISTS {table_name}")
         spark.sql(f"CREATE TABLE {table_name} USING PARQUET LOCATION '{curated_dir}'")
-        
+
         print(f"JSON directory scan completed. Total rows: {df_merged.count()}")
         print(f"Curated path: {curated_dir} | SQL table: {table_name}")
-        
+
     except Exception as e:
         print(f"Error scanning JSON directory: {e}")
         raise
@@ -3414,30 +3823,30 @@ def scan_json_directory_for_connections(
 
 # --- API Health Check: Detect Contention Before Large Scans ---
 
+
 def check_scanner_api_health(
-    test_duration_minutes: int = 1,
-    test_calls: int = 2
+    test_duration_minutes: int = 1, test_calls: int = 2
 ) -> dict:
     """
     Test Scanner API availability and detect if other processes are using it.
-    
+
     Run this BEFORE starting large scans to understand current API contention.
-    
+
     How it works:
     1. Makes small test API calls (getting workspace list) over 1 minute
     2. Monitors for 429 rate limit errors
     3. Estimates if others are using the API based on error patterns
     4. Recommends optimal MAX_PARALLEL_SCANS setting
-    
+
     COST: Only 2-3 API calls (0.4-0.6% of hourly quota) - minimal impact for shared tenants
-    
+
     Args:
         test_duration_minutes: How long to run the test (default: 1 minute for shared tenants)
         test_calls: Number of test calls to make (default: 2 for minimal cost)
                     Quick (shared tenant): 2 calls - DEFAULT
                     Standard: 4 calls
                     Thorough: 6 calls
-    
+
     Returns:
         dict with:
         - status: 'clear', 'light', 'moderate', 'heavy'
@@ -3445,59 +3854,67 @@ def check_scanner_api_health(
         - recommended_max_parallel: Suggested MAX_PARALLEL_SCANS value
         - estimated_other_usage: Estimated API calls/hour by other processes
         - safe_to_proceed: Boolean whether to proceed with large scan
-    
+
     Example usage:
         # Quick check (2 API calls, 1 minute) - DEFAULT for shared tenants
         health = check_scanner_api_health()
-        
+
         # Standard check (4 API calls, 2 minutes)
         health = check_scanner_api_health(test_duration_minutes=2, test_calls=4)
-        
+
         # Thorough check (6 API calls, 3 minutes)
         health = check_scanner_api_health(test_duration_minutes=3, test_calls=6)
-        
+
         if health['safe_to_proceed']:
             run_cloud_connection_scan(enable_full_scan_chunked=True)
         else:
             print("Heavy contention - reschedule for off-hours")
     """
-    print("="*70)
+    print("=" * 70)
     print("🔍 SCANNER API HEALTH CHECK")
-    print("="*70)
-    print(f"Running {test_calls} test API calls over {test_duration_minutes} minutes...")
-    print(f"Cost: ~{test_calls + 1} API calls (~{((test_calls + 1) / 500 * 100):.1f}% of hourly quota)")
+    print("=" * 70)
+    print(
+        f"Running {test_calls} test API calls over {test_duration_minutes} minutes..."
+    )
+    print(
+        f"Cost: ~{test_calls + 1} API calls (~{((test_calls + 1) / 500 * 100):.1f}% of hourly quota)"
+    )
     print("Optimized for shared tenants - minimal API impact")
     print()
-    
+
     # Use existing authentication infrastructure
     if not HEADERS:
         initialize_authentication()
-    
-    base_url = f"https://api.powerbi.com/v1.0/myorg"
+
+    base_url = "https://api.powerbi.com/v1.0/myorg"
     headers = HEADERS
-    
+
     # Calculate interval between test calls
     interval_seconds = (test_duration_minutes * 60) / test_calls
-    
+
     errors_429 = 0
     errors_other = 0
     successful_calls = 0
     start_time = time.time()
-    
+
     for i in range(test_calls):
-        print(f"Test call {i+1}/{test_calls}...", end=" ")
-        
+        print(f"Test call {i + 1}/{test_calls}...", end=" ")
+
         try:
             # Make a lightweight API call (get modified workspaces, small result)
             # This uses the Scanner API without actually scanning
             url = f"{base_url}/admin/workspaces/modified"
             params = {
-                "modifiedSince": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
-                "$top": 5  # Only get 5 workspaces, minimal data
+                "modifiedSince": (datetime.now(timezone.utc) - timedelta(hours=1))
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "$top": 5,  # Only get 5 workspaces, minimal data
             }
-            
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            
+
+            resp = _get_http_session().get(
+                url, headers=headers, params=params, timeout=30
+            )
+
             if resp.status_code == 429:
                 errors_429 += 1
                 print("❌ Rate limited (429)")
@@ -3509,33 +3926,33 @@ def check_scanner_api_health(
             else:
                 errors_other += 1
                 print(f"⚠️  Status {resp.status_code}")
-            
+
         except requests.RequestException as e:
             errors_other += 1
             print(f"⚠️  Error: {e}")
-        
+
         # Wait before next test call (unless it's the last one)
         if i < test_calls - 1:
             time.sleep(interval_seconds)
-    
+
     elapsed_minutes = (time.time() - start_time) / 60
-    
+
     # Analysis
     print()
-    print("="*70)
+    print("=" * 70)
     print("📊 HEALTH CHECK RESULTS")
-    print("="*70)
+    print("=" * 70)
     print(f"Duration: {elapsed_minutes:.1f} minutes")
     print(f"Successful calls: {successful_calls}/{test_calls}")
     print(f"Rate limit errors (429): {errors_429}/{test_calls}")
     print(f"Other errors: {errors_other}/{test_calls}")
     print()
-    
+
     # Determine status and recommendations
     rate_limit_percentage = (errors_429 / test_calls) * 100 if test_calls > 0 else 0
-    
+
     if errors_429 == 0:
-        status = 'clear'
+        status = "clear"
         recommended_max_parallel = 3  # Recommend 3 when clear (faster but still safe)
         estimated_other_usage = 0
         safe_to_proceed = True
@@ -3543,11 +3960,13 @@ def check_scanner_api_health(
         details = [
             "The Scanner API appears to be available with no other users",
             "Safe to increase from default MAX_PARALLEL_SCANS=1 to 3-5 for faster completion",
-            "Can increase to 8 if you want maximum speed (96% quota usage)"
+            "Can increase to 8 if you want maximum speed (96% quota usage)",
         ]
-        
-    elif errors_429 == 1 and test_calls >= 4:  # 25% or less rate limited (with 4+ tests)
-        status = 'light'
+
+    elif (
+        errors_429 == 1 and test_calls >= 4
+    ):  # 25% or less rate limited (with 4+ tests)
+        status = "light"
         recommended_max_parallel = 1  # Stay at default
         estimated_other_usage = 100  # ~100 calls/hour estimated
         safe_to_proceed = True
@@ -3556,11 +3975,11 @@ def check_scanner_api_health(
             f"{rate_limit_percentage:.0f}% of test calls were rate limited",
             "Some other process is using the Scanner API (estimated ~100 calls/hour)",
             f"RECOMMENDED: Keep MAX_PARALLEL_SCANS={recommended_max_parallel} (default)",
-            "This will use ~120 calls/hour (24% quota), leaving plenty for others"
+            "This will use ~120 calls/hour (24% quota), leaving plenty for others",
         ]
-        
+
     elif rate_limit_percentage >= 50:  # 50%+ rate limited
-        status = 'heavy'
+        status = "heavy"
         recommended_max_parallel = 1
         estimated_other_usage = 400  # ~400+ calls/hour estimated
         safe_to_proceed = False
@@ -3573,11 +3992,11 @@ def check_scanner_api_health(
             "OPTIONS:",
             "  1. Wait for off-hours (nights/weekends)",
             "  2. Coordinate with tenant admins to schedule exclusive time",
-            f"  3. If urgent: Set MAX_PARALLEL_SCANS={recommended_max_parallel} (very slow)"
+            f"  3. If urgent: Set MAX_PARALLEL_SCANS={recommended_max_parallel} (very slow)",
         ]
-        
+
     else:  # Between 25-50% rate limited
-        status = 'moderate'
+        status = "moderate"
         recommended_max_parallel = 2
         estimated_other_usage = 250  # ~250 calls/hour estimated
         safe_to_proceed = True
@@ -3588,45 +4007,50 @@ def check_scanner_api_health(
             "Estimated other usage: ~250 calls/hour",
             f"RECOMMENDED: Set MAX_PARALLEL_SCANS={recommended_max_parallel}",
             "This will use ~250 calls/hour, sharing quota 50/50",
-            "OR schedule your scan for off-hours/weekends"
+            "OR schedule your scan for off-hours/weekends",
         ]
-    
+
     print(message)
     print("-" * 70)
     for detail in details:
         print(f"  {detail}")
     print()
-    
+
     # Summary
     result = {
-        'status': status,
-        'rate_limit_errors': errors_429,
-        'rate_limit_percentage': rate_limit_percentage,
-        'successful_calls': successful_calls,
-        'recommended_max_parallel': recommended_max_parallel,
-        'estimated_other_usage': estimated_other_usage,
-        'safe_to_proceed': safe_to_proceed,
-        'message': message,
-        'details': details
+        "status": status,
+        "rate_limit_errors": errors_429,
+        "rate_limit_percentage": rate_limit_percentage,
+        "successful_calls": successful_calls,
+        "recommended_max_parallel": recommended_max_parallel,
+        "estimated_other_usage": estimated_other_usage,
+        "safe_to_proceed": safe_to_proceed,
+        "message": message,
+        "details": details,
     }
-    
+
     # Practical next steps
     print("🎯 NEXT STEPS:")
     print("-" * 70)
     if safe_to_proceed:
-        if status == 'clear':
-            print("  1. 🎉 Great news! You can increase MAX_PARALLEL_SCANS for faster completion")
-            print("  2. Edit line 135 in the script:")
-            print("     Change: MAX_PARALLEL_SCANS = 1")
-            print("     To:     MAX_PARALLEL_SCANS = 3  (or 5 for even faster)")
+        if status == "clear":
+            print(
+                "  1. 🎉 Great news! You can increase MAX_PARALLEL_SCANS for faster completion"
+            )
+            print("  2. Set MAX_PARALLEL_SCANS via config file or CLI:")
+            print("     Config file: max_parallel_scans: 3  (in scanner_config.yaml)")
+            print("     CLI:         --max-parallel-scans 3  (or 5 for even faster)")
             print("  3. This will reduce scan time from ~7 days to ~2 days")
         else:
-            print(f"  1. Edit line 107 in the script:")
-            print(f"     Change: MAX_PARALLEL_SCANS = 5")
-            print(f"     To:     MAX_PARALLEL_SCANS = {recommended_max_parallel}")
-            print("  2. Save the file")
-            print("  3. Proceed with your scan")
-            print("  4. Monitor for continued 429 errors")
+            print(
+                f"  1. Set MAX_PARALLEL_SCANS to {recommended_max_parallel} via config file or CLI:"
+            )
+            print(
+                f"     Config file: max_parallel_scans: {recommended_max_parallel}  (in scanner_config.yaml)"
+            )
+            print(f"     CLI:         --max-parallel-scans {recommended_max_parallel}")
+            print("  2. Proceed with your scan")
+            print("  3. Monitor for continued 429 errors")
     else:
         print("  1. PAUSE - Do not run large scan now")
         print("  2. Check tenant calendar for scheduled maintenance/reports")
@@ -3635,14 +4059,15 @@ def check_scanner_api_health(
         print("     - Weeknights: 8 PM - 6 AM")
         print("     - Weekends: Friday 6 PM - Monday 6 AM")
         print("  5. Re-run this health check before starting")
-    
-    print("="*70)
+
+    print("=" * 70)
     print()
-    
+
     return result
 
 
 # --- Orchestrator: Choose Any Combination of Features ---
+
 
 def run_cloud_connection_scan(
     enable_full_scan: bool = False,
@@ -3667,13 +4092,15 @@ def run_cloud_connection_scan(
     max_calls_per_hour: int = 450,  # NEW: Total API calls per hour for parallel mode (Phase 3)
     capacity_filter: List[str] = None,  # NEW: Only scan these capacity IDs (Phase 3)
     exclude_capacities: List[str] = None,  # NEW: Skip these capacity IDs (Phase 3)
-    capacity_priority: List[str] = None,  # NEW: Process capacities in this order (Phase 3)
+    capacity_priority: List[
+        str
+    ] = None,  # NEW: Process capacities in this order (Phase 3)
     curated_dir: str = CURATED_DIR,
-    table_name: str = "tenant_cloud_connections"
+    table_name: str = "tenant_cloud_connections",
 ) -> None:
     """
     Orchestrates cloud connection scanning with configurable features.
-    
+
     Args:
         enable_full_scan: Run full tenant scan (baseline) - may hit rate limits on large tenants
         enable_full_scan_chunked: Run full tenant scan with automatic rate limit management (recommended for 10K+ workspaces)
@@ -3711,43 +4138,77 @@ def run_cloud_connection_scan(
     else:
         lookback_hours = 24  # Default to 1 day
         time_display = "1 day (default)"
-    
+
     # Initialize authentication if not already done (for programmatic usage)
     if HEADERS is None:
         initialize_authentication()
-    
-    print("="*80)
+
+    print("=" * 80)
     print("Cloud Connection Scanner - Feature Selection")
-    print("="*80)
-    print(f"Full Tenant Scan:           {'ENABLED' if enable_full_scan else 'DISABLED'}")
-    print(f"Full Tenant Scan (Chunked): {'ENABLED' if enable_full_scan_chunked else 'DISABLED'}")
-    print(f"Incremental Scan:           {'ENABLED' if enable_incremental_scan else 'DISABLED'}")
-    print(f"Hash Optimization:          {'ENABLED' if enable_hash_optimization and enable_incremental_scan else 'DISABLED'}")
-    print(f"Capacity Grouping:          {'ENABLED' if group_by_capacity else 'DISABLED'}")
-    print(f"Parallel Capacities:        {parallel_capacities} {'(Sequential)' if parallel_capacities == 1 else f'(Parallel - Phase 3)'}")
+    print("=" * 80)
+    print(
+        f"Full Tenant Scan:           {'ENABLED' if enable_full_scan else 'DISABLED'}"
+    )
+    print(
+        f"Full Tenant Scan (Chunked): {'ENABLED' if enable_full_scan_chunked else 'DISABLED'}"
+    )
+    print(
+        f"Incremental Scan:           {'ENABLED' if enable_incremental_scan else 'DISABLED'}"
+    )
+    print(
+        f"Hash Optimization:          {'ENABLED' if enable_hash_optimization and enable_incremental_scan else 'DISABLED'}"
+    )
+    print(
+        f"Capacity Grouping:          {'ENABLED' if group_by_capacity else 'DISABLED'}"
+    )
+    print(
+        f"Parallel Capacities:        {parallel_capacities} {'(Sequential)' if parallel_capacities == 1 else '(Parallel - Phase 3)'}"
+    )
     if parallel_capacities > 1:
         print(f"  Max Calls/Hour:           {max_calls_per_hour}")
-        print(f"  Capacity Filter:          {', '.join(capacity_filter) if capacity_filter else 'None'}")
-        print(f"  Exclude Capacities:       {', '.join(exclude_capacities) if exclude_capacities else 'None'}")
-        print(f"  Capacity Priority:        {', '.join(capacity_priority) if capacity_priority else 'None'}")
-    print(f"JSON Directory Scan:        {'ENABLED' if enable_json_directory_scan else 'DISABLED'}")
-    print(f"Scan ID Retrieval:          {'ENABLED' if enable_scan_id_retrieval else 'DISABLED'}")
-    print(f"Directionality Analysis:    {'ENABLED' if enable_directionality_analysis else 'DISABLED'}")
+        print(
+            f"  Capacity Filter:          {', '.join(capacity_filter) if capacity_filter else 'None'}"
+        )
+        print(
+            f"  Exclude Capacities:       {', '.join(exclude_capacities) if exclude_capacities else 'None'}"
+        )
+        print(
+            f"  Capacity Priority:        {', '.join(capacity_priority) if capacity_priority else 'None'}"
+        )
+    print(
+        f"JSON Directory Scan:        {'ENABLED' if enable_json_directory_scan else 'DISABLED'}"
+    )
+    print(
+        f"Scan ID Retrieval:          {'ENABLED' if enable_scan_id_retrieval else 'DISABLED'}"
+    )
+    print(
+        f"Directionality Analysis:    {'ENABLED' if enable_directionality_analysis else 'DISABLED'}"
+    )
     print(f"Include Personal WS:        {include_personal}")
     print(f"Incremental Lookback:       {time_display}")
-    print(f"Activity Analysis Days:     {activity_days_back if enable_directionality_analysis else 'N/A'}")
+    print(
+        f"Activity Analysis Days:     {activity_days_back if enable_directionality_analysis else 'N/A'}"
+    )
     print(f"Max Batches/Hour:           {max_batches_per_hour}")
     print(f"JSON Directory Path:        {json_directory_path or 'Not specified'}")
     print(f"Scan ID:                    {scan_id or 'Not specified'}")
     print(f"Output Table:               {table_name}")
-    print("="*80)
-    
-    features_enabled = sum([enable_full_scan, enable_full_scan_chunked, enable_incremental_scan, 
-                           enable_json_directory_scan, enable_scan_id_retrieval, enable_directionality_analysis])
+    print("=" * 80)
+
+    features_enabled = sum(
+        [
+            enable_full_scan,
+            enable_full_scan_chunked,
+            enable_incremental_scan,
+            enable_json_directory_scan,
+            enable_scan_id_retrieval,
+            enable_directionality_analysis,
+        ]
+    )
     if features_enabled == 0:
         print("\nWARNING: No features enabled. Nothing to do.")
         return
-    
+
     # Feature 1: Full Tenant Scan
     if enable_full_scan:
         print("\n[1/5] Running FULL TENANT SCAN...")
@@ -3761,13 +4222,13 @@ def run_cloud_connection_scan(
                 max_calls_per_hour=max_calls_per_hour,
                 capacity_filter=capacity_filter,
                 exclude_capacities=exclude_capacities,
-                capacity_priority=capacity_priority
+                capacity_priority=capacity_priority,
             )
             print("✓ Full tenant scan completed successfully")
         except Exception as e:
             print(f"✗ Full tenant scan failed: {e}")
             raise
-    
+
     # Feature 1b: Full Tenant Scan (Chunked with Rate Limit Management)
     if enable_full_scan_chunked:
         print("\n[1b/5] Running FULL TENANT SCAN (CHUNKED - Rate Limit Safe)...")
@@ -3781,75 +4242,79 @@ def run_cloud_connection_scan(
                 parallel_capacities=parallel_capacities,
                 capacity_filter=capacity_filter,
                 exclude_capacities=exclude_capacities,
-                capacity_priority=capacity_priority
+                capacity_priority=capacity_priority,
             )
             print("✓ Chunked full tenant scan completed successfully")
         except Exception as e:
             print(f"✗ Chunked full tenant scan failed: {e}")
             raise
-    
+
     # Feature 2: Incremental Scan
     if enable_incremental_scan:
         print("\n[2/5] Running INCREMENTAL SCAN...")
         try:
-            modified_since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).isoformat()
+            modified_since = (
+                datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+            ).isoformat()
             incremental_update(
                 modified_since_iso=modified_since,
                 include_personal=include_personal,
                 enable_hash_optimization=enable_hash_optimization,
                 curated_dir=curated_dir,
-                table_name=table_name
+                table_name=table_name,
             )
             print("✓ Incremental scan completed successfully")
         except Exception as e:
             print(f"✗ Incremental scan failed: {e}")
             raise
-    
+
     # Feature 3: JSON Directory Scan
     if enable_json_directory_scan:
         print("\n[3/4] Running JSON DIRECTORY SCAN...")
         if not json_directory_path:
-            raise ValueError("json_directory_path is required when enable_json_directory_scan=True")
-        
+            raise ValueError(
+                "json_directory_path is required when enable_json_directory_scan=True"
+            )
+
         try:
             scan_json_directory_for_connections(
                 json_dir_path=json_directory_path,
                 curated_dir=curated_dir,
                 table_name=table_name,
-                merge_with_existing=json_merge_with_existing
+                merge_with_existing=json_merge_with_existing,
             )
             print("✓ JSON directory scan completed successfully")
         except Exception as e:
             print(f"✗ JSON directory scan failed: {e}")
             raise
-    
+
     # Feature 4: Scan ID Retrieval
     if enable_scan_id_retrieval:
         print("\n[4/4] Running SCAN ID RETRIEVAL...")
         if not scan_id:
             raise ValueError("scan_id is required when enable_scan_id_retrieval=True")
-        
+
         try:
             get_scan_result_by_id(
                 scan_id=scan_id,
                 curated_dir=curated_dir,
                 table_name=table_name,
-                merge_with_existing=scan_id_merge_with_existing
+                merge_with_existing=scan_id_merge_with_existing,
             )
             print("✓ Scan ID retrieval completed successfully")
         except Exception as e:
             print(f"✗ Scan ID retrieval failed: {e}")
             raise
-    
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("SCAN COMPLETE - All enabled features executed successfully")
-    print("="*80)
-    
+    print("=" * 80)
+
     # Feature 5: Connection Directionality Analysis
     if enable_directionality_analysis:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("[ANALYSIS] Running Connection Directionality Analysis...")
-        print("="*80)
+        print("=" * 80)
         try:
             # Determine output directory
             if directionality_analysis_output_dir:
@@ -3858,12 +4323,12 @@ def run_cloud_connection_scan(
                 analysis_output = None  # Save to lakehouse tables
             else:
                 analysis_output = "./scanner_output/analysis"  # Local default
-            
+
             analyze_connection_directionality(
                 scanner_results_path=None,  # Reads from lakehouse table or curated_dir/table_name
                 include_activity_logs=True,
                 activity_days_back=activity_days_back,
-                output_dir=analysis_output
+                output_dir=analysis_output,
             )
             print("✓ Directionality analysis completed successfully")
         except Exception as e:
@@ -3873,346 +4338,348 @@ def run_cloud_connection_scan(
 
 # --- CLI Wrapper ---
 
+
 def main():
     """
     Command-line interface for Fabric Scanner Cloud Connections.
-    
+
     Usage Examples:
         # Full scan (baseline)
         python fabric_scanner_cloud_connections.py --full-scan
-        
+
         # Full scan with rate limiting (safe for large shared tenants)
         python fabric_scanner_cloud_connections.py --full-scan --large-shared-tenants
-        
+
         # Incremental scan (last 24 hours, with hash optimization)
         python fabric_scanner_cloud_connections.py --incremental
-        
+
         # Incremental scan (last 7 days)
         python fabric_scanner_cloud_connections.py --incremental --days 7
-        
+
         # Incremental scan (last 6 hours)
         python fabric_scanner_cloud_connections.py --incremental --hours 6
-        
+
         # Incremental without hash optimization
         python fabric_scanner_cloud_connections.py --incremental --no-hash-optimization
-        
+
         # Get scan result by ID
         python fabric_scanner_cloud_connections.py --scan-id e7d03602-4873-4760-b37e-1563ef5358e3
-        
+
         # Health check
         python fabric_scanner_cloud_connections.py --health-check
-        
+
         # Analyze connection directionality
         python fabric_scanner_cloud_connections.py --analyze-direction --with-activity --activity-days 30
-        
+
         # Process JSON directory
         python fabric_scanner_cloud_connections.py --json-dir Files/scanner/raw/full
-        
+
         # Exclude personal workspaces
         python fabric_scanner_cloud_connections.py --full-scan --no-personal
     """
-    import argparse
-    
+
     parser = argparse.ArgumentParser(
-        description='Microsoft Fabric Scanner API - Cloud Connections Inventory',
+        description="Microsoft Fabric Scanner API - Cloud Connections Inventory",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   Full scan (baseline):
     python %(prog)s --full-scan
-  
+
   Full scan with rate limiting (safe for large shared tenants):
     python %(prog)s --full-scan --large-shared-tenants
-  
+
   Incremental scan (last 24 hours):
     python %(prog)s --incremental
-  
+
   Incremental scan (last 7 days):
     python %(prog)s --incremental --days 7
-  
+
   Health check:
     python %(prog)s --health-check
-  
+
   Get specific scan result:
     python %(prog)s --scan-id YOUR_SCAN_ID
-        """
+        """,
     )
-    
+
     parser.add_argument(
-        '--version',
-        action='version',
-        version=f'%(prog)s {__version__}'
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
-    
+
     # Scan mode options (mutually exclusive)
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument(
-        '--full-scan',
-        action='store_true',
-        help='Run full tenant scan (all workspaces)'
+        "--full-scan", action="store_true", help="Run full tenant scan (all workspaces)"
     )
     mode_group.add_argument(
-        '--incremental',
-        action='store_true',
-        help='Run incremental scan (modified workspaces only)'
+        "--incremental",
+        action="store_true",
+        help="Run incremental scan (modified workspaces only)",
     )
     mode_group.add_argument(
-        '--scan-id',
+        "--scan-id",
         type=str,
-        metavar='SCAN_ID',
-        help='Retrieve results from a specific scan ID (UUID)'
+        metavar="SCAN_ID",
+        help="Retrieve results from a specific scan ID (UUID)",
     )
     mode_group.add_argument(
-        '--health-check',
-        action='store_true',
-        help='Check Scanner API health and quota availability'
+        "--health-check",
+        action="store_true",
+        help="Check Scanner API health and quota availability",
     )
     mode_group.add_argument(
-        '--analyze-direction',
-        action='store_true',
-        help='Analyze connection directionality (inbound vs outbound)'
+        "--analyze-direction",
+        action="store_true",
+        help="Analyze connection directionality (inbound vs outbound)",
     )
     mode_group.add_argument(
-        '--json-dir',
+        "--json-dir",
         type=str,
-        metavar='PATH',
-        help='Process JSON files from directory (e.g., Files/scanner/raw)'
+        metavar="PATH",
+        help="Process JSON files from directory (e.g., Files/scanner/raw)",
     )
-    
+
     # Full scan options
-    full_group = parser.add_argument_group('full scan options')
+    full_group = parser.add_argument_group("full scan options")
     full_group.add_argument(
-        '--large-shared-tenants',
-        action='store_true',
-        help='Use rate-limited chunked mode for large shared tenants (processes in hourly chunks, respects 500 calls/hour limit)'
+        "--large-shared-tenants",
+        action="store_true",
+        help="Use rate-limited chunked mode for large shared tenants (processes in hourly chunks, respects 500 calls/hour limit)",
     )
     full_group.add_argument(
-        '--group-by-capacity',
-        action='store_true',
-        help='Group and process workspaces by capacity for better organization (recommended for multi-capacity tenants)'
+        "--group-by-capacity",
+        action="store_true",
+        help="Group and process workspaces by capacity for better organization (recommended for multi-capacity tenants)",
     )
     full_group.add_argument(
-        '--max-batches-per-hour',
+        "--max-batches-per-hour",
         type=int,
         default=450,
-        metavar='N',
-        help='Max API calls per hour in chunked mode (default: 450, leaves 10%% buffer)'
+        metavar="N",
+        help="Max API calls per hour in chunked mode (default: 450, leaves 10%% buffer)",
     )
     full_group.add_argument(
-        '--parallel-capacities',
+        "--parallel-capacities",
         type=int,
         default=1,
-        metavar='N',
-        help='Number of capacities to scan in parallel (1=sequential, 2-3=recommended, default: 1) - Phase 3'
+        metavar="N",
+        help="Number of capacities to scan in parallel (1=sequential, 2-3=recommended, default: 1) - Phase 3",
     )
     full_group.add_argument(
-        '--max-calls-per-hour',
+        "--max-calls-per-hour",
         type=int,
         default=450,
-        metavar='N',
-        help='Total API calls per hour for parallel mode (default: 450) - Phase 3'
+        metavar="N",
+        help="Total API calls per hour for parallel mode (default: 450) - Phase 3",
     )
     full_group.add_argument(
-        '--capacity-filter',
+        "--capacity-filter",
         type=str,
-        metavar='IDS',
-        help='Comma-separated capacity IDs to scan (e.g., cap-123,cap-456) - Phase 3'
+        metavar="IDS",
+        help="Comma-separated capacity IDs to scan (e.g., cap-123,cap-456) - Phase 3",
     )
     full_group.add_argument(
-        '--exclude-capacities',
+        "--exclude-capacities",
         type=str,
-        metavar='IDS',
-        help='Comma-separated capacity IDs to exclude (e.g., shared,cap-789) - Phase 3'
+        metavar="IDS",
+        help="Comma-separated capacity IDs to exclude (e.g., shared,cap-789) - Phase 3",
     )
     full_group.add_argument(
-        '--capacity-priority',
+        "--capacity-priority",
         type=str,
-        metavar='IDS',
-        help='Comma-separated capacity IDs to process first (e.g., cap-123,cap-456) - Phase 3'
+        metavar="IDS",
+        help="Comma-separated capacity IDs to process first (e.g., cap-123,cap-456) - Phase 3",
     )
-    
+
     # Incremental scan options
-    incr_group = parser.add_argument_group('incremental scan options')
+    incr_group = parser.add_argument_group("incremental scan options")
     incr_group.add_argument(
-        '--days',
+        "--days",
         type=int,
-        metavar='N',
-        help='Days to look back for modified workspaces (default: 1)'
+        metavar="N",
+        help="Days to look back for modified workspaces (default: 1)",
     )
     incr_group.add_argument(
-        '--hours',
+        "--hours",
         type=float,
-        metavar='N',
-        help='Hours to look back (overrides --days if specified)'
+        metavar="N",
+        help="Hours to look back (overrides --days if specified)",
     )
     incr_group.add_argument(
-        '--no-hash-optimization',
-        action='store_true',
-        help='Disable hash optimization (scans all modified workspaces, not just changed ones)'
+        "--no-hash-optimization",
+        action="store_true",
+        help="Disable hash optimization (scans all modified workspaces, not just changed ones)",
     )
-    
+
     # Direction analysis options
-    dir_group = parser.add_argument_group('direction analysis options')
+    dir_group = parser.add_argument_group("direction analysis options")
     dir_group.add_argument(
-        '--with-activity',
-        action='store_true',
-        help='Include Activity Event API analysis for inbound connections'
+        "--with-activity",
+        action="store_true",
+        help="Include Activity Event API analysis for inbound connections",
     )
     dir_group.add_argument(
-        '--activity-days',
+        "--activity-days",
         type=int,
         default=30,
-        metavar='N',
-        help='Days of activity history to analyze (default: 30)'
+        metavar="N",
+        help="Days of activity history to analyze (default: 30)",
     )
     dir_group.add_argument(
-        '--output-dir',
+        "--output-dir",
         type=str,
-        metavar='PATH',
-        help='Output directory for analysis results'
+        metavar="PATH",
+        help="Output directory for analysis results",
     )
-    
+
     # General options
     parser.add_argument(
-        '--no-personal',
-        action='store_true',
-        help='Exclude personal workspaces from scan'
+        "--no-personal",
+        action="store_true",
+        help="Exclude personal workspaces from scan",
     )
     parser.add_argument(
-        '--workspace-table-source',
+        "--workspace-table-source",
         type=str,
-        metavar='TABLE_NAME',
-        help='Read workspace list from lakehouse table/parquet file instead of API. '
-             'Requires workspace_id column. Automatically falls back to API if read fails. '
-             'Example: workspace_inventory or ./my_workspaces.parquet'
+        metavar="TABLE_NAME",
+        help="Read workspace list from lakehouse table/parquet file instead of API. "
+        "Requires workspace_id column. Automatically falls back to API if read fails. "
+        "Example: workspace_inventory or ./my_workspaces.parquet",
     )
     parser.add_argument(
-        '--table-name',
+        "--table-name",
         type=str,
-        default='tenant_cloud_connections',
-        metavar='NAME',
-        help='SQL table name for results (default: tenant_cloud_connections)'
+        default="tenant_cloud_connections",
+        metavar="NAME",
+        help="SQL table name for results (default: tenant_cloud_connections)",
     )
     parser.add_argument(
-        '--curated-dir',
+        "--curated-dir",
         type=str,
         default=CURATED_DIR,
-        metavar='PATH',
-        help=f'Output directory for curated data (default: {CURATED_DIR})'
+        metavar="PATH",
+        help=f"Output directory for curated data (default: {CURATED_DIR})",
     )
     parser.add_argument(
-        '--no-merge',
-        action='store_true',
-        help='Overwrite existing data instead of merging'
+        "--no-merge",
+        action="store_true",
+        help="Overwrite existing data instead of merging",
     )
-    
+
     # Lakehouse upload options (for local execution)
-    lakehouse_group = parser.add_argument_group('lakehouse upload options (local execution)')
-    lakehouse_group.add_argument(
-        '--upload-to-lakehouse',
-        action='store_true',
-        help='Upload results to Fabric lakehouse when running locally'
+    lakehouse_group = parser.add_argument_group(
+        "lakehouse upload options (local execution)"
     )
     lakehouse_group.add_argument(
-        '--lakehouse-workspace-id',
+        "--upload-to-lakehouse",
+        action="store_true",
+        help="Upload results to Fabric lakehouse when running locally",
+    )
+    lakehouse_group.add_argument(
+        "--lakehouse-workspace-id",
         type=str,
-        metavar='WORKSPACE_ID',
-        help='Workspace ID containing the target lakehouse'
+        metavar="WORKSPACE_ID",
+        help="Workspace ID containing the target lakehouse",
     )
     lakehouse_group.add_argument(
-        '--lakehouse-id',
+        "--lakehouse-id",
         type=str,
-        metavar='LAKEHOUSE_ID',
-        help='Lakehouse ID to upload results to'
+        metavar="LAKEHOUSE_ID",
+        help="Lakehouse ID to upload results to",
     )
     lakehouse_group.add_argument(
-        '--lakehouse-upload-path',
+        "--lakehouse-upload-path",
         type=str,
-        default='Files/scanner',
-        metavar='PATH',
-        help='Path within lakehouse to upload files (default: Files/scanner)'
+        default="Files/scanner",
+        metavar="PATH",
+        help="Path within lakehouse to upload files (default: Files/scanner)",
     )
-    
+
     # Configuration and checkpoint options
-    config_group = parser.add_argument_group('configuration & checkpoint options')
+    config_group = parser.add_argument_group("configuration & checkpoint options")
     config_group.add_argument(
-        '--config',
+        "--config",
         type=str,
-        metavar='PATH',
-        help='Path to configuration file (YAML or JSON). Example: scanner_config.yaml'
+        metavar="PATH",
+        help="Path to configuration file (YAML or JSON). Example: scanner_config.yaml",
     )
     config_group.add_argument(
-        '--enable-checkpoints',
-        action='store_true',
-        help='Enable checkpoint/resume for long-running scans (overrides config file)'
+        "--enable-checkpoints",
+        action="store_true",
+        help="Enable checkpoint/resume for long-running scans (overrides config file)",
     )
     config_group.add_argument(
-        '--disable-checkpoints',
-        action='store_true',
-        help='Disable checkpoint/resume (overrides config file)'
+        "--disable-checkpoints",
+        action="store_true",
+        help="Disable checkpoint/resume (overrides config file)",
     )
     config_group.add_argument(
-        '--lakehouse-upload-debug',
-        action='store_true',
-        help='Show lakehouse upload configuration details for debugging'
+        "--lakehouse-upload-debug",
+        action="store_true",
+        help="Show lakehouse upload configuration details for debugging",
     )
     config_group.add_argument(
-        '--debug',
-        action='store_true',
-        help='Enable detailed debug output (includes lakehouse config and API responses)'
+        "--debug",
+        action="store_true",
+        help="Enable detailed debug output (includes lakehouse config and API responses)",
     )
     config_group.add_argument(
-        '--checkpoint-storage',
+        "--checkpoint-storage",
         type=str,
-        choices=['json', 'lakehouse'],
-        metavar='TYPE',
-        help='Checkpoint storage type: json (local files) or lakehouse (Fabric storage)'
+        choices=["json", "lakehouse"],
+        metavar="TYPE",
+        help="Checkpoint storage type: json (local files) or lakehouse (Fabric storage)",
     )
     config_group.add_argument(
-        '--clear-checkpoint',
+        "--clear-checkpoint",
         type=str,
-        metavar='CHECKPOINT_ID',
-        help='Clear a specific checkpoint file and exit (utility command)'
+        metavar="CHECKPOINT_ID",
+        help="Clear a specific checkpoint file and exit (utility command)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Declare global variables that will be modified
     global DEBUG_MODE
-    
+
     # Set DEBUG_MODE based on command-line argument
     if args.debug:
         DEBUG_MODE = True
         print("🔍 DEBUG MODE ENABLED")
-    
+
     # Load configuration file if provided
     if args.config:
         print(f"📄 Loading configuration from: {args.config}")
         config = load_config_file(args.config)
         if config:
             apply_config(config)
-            print(f"✅ Configuration applied successfully")
-    
+            print("✅ Configuration applied successfully")
+
     # Handle checkpoint clearing utility command
     if args.clear_checkpoint:
         print(f"🗑️  Clearing checkpoint: {args.clear_checkpoint}")
         checkpoint_storage = args.checkpoint_storage or CHECKPOINT_STORAGE
         mgr = CheckpointManager(args.clear_checkpoint, storage=checkpoint_storage)
         mgr.clear_checkpoint()
-        print(f"✅ Checkpoint cleared successfully")
+        print("✅ Checkpoint cleared successfully")
         return 0
-    
+
     # Override checkpoint settings from command line
     enable_checkpointing_override = None
     if args.enable_checkpoints:
         enable_checkpointing_override = True
     elif args.disable_checkpoints:
         enable_checkpointing_override = False
-    
+
     checkpoint_storage_override = args.checkpoint_storage
-    
+
     # Override lakehouse upload settings from command line
-    global UPLOAD_TO_LAKEHOUSE, LAKEHOUSE_WORKSPACE_ID, LAKEHOUSE_ID, LAKEHOUSE_UPLOAD_PATH
+    global \
+        UPLOAD_TO_LAKEHOUSE, \
+        LAKEHOUSE_WORKSPACE_ID, \
+        LAKEHOUSE_ID, \
+        LAKEHOUSE_UPLOAD_PATH
     if args.upload_to_lakehouse:
         UPLOAD_TO_LAKEHOUSE = True
     if args.lakehouse_workspace_id:
@@ -4221,26 +4688,32 @@ Examples:
         LAKEHOUSE_ID = args.lakehouse_id
     if args.lakehouse_upload_path:
         LAKEHOUSE_UPLOAD_PATH = args.lakehouse_upload_path
-    
+
     # Initialize authentication (only when running as script, not during test imports)
     initialize_authentication()
-    
+
     # Execute based on mode
     try:
         if args.full_scan:
-            print("="*80)
+            print("=" * 80)
             print("FULL TENANT SCAN")
-            print("="*80)
+            print("=" * 80)
             include_personal = not args.no_personal
-            
+
             # Parse Phase 3 parallel capacity parameters
-            capacity_filter = args.capacity_filter.split(',') if args.capacity_filter else None
-            exclude_capacities = args.exclude_capacities.split(',') if args.exclude_capacities else None
-            capacity_priority = args.capacity_priority.split(',') if args.capacity_priority else None
-            
+            capacity_filter = (
+                args.capacity_filter.split(",") if args.capacity_filter else None
+            )
+            exclude_capacities = (
+                args.exclude_capacities.split(",") if args.exclude_capacities else None
+            )
+            capacity_priority = (
+                args.capacity_priority.split(",") if args.capacity_priority else None
+            )
+
             # Display Phase 3 settings if parallel mode enabled
             if args.parallel_capacities > 1:
-                print(f"Phase 3: Parallel Capacity Scanning ENABLED")
+                print("Phase 3: Parallel Capacity Scanning ENABLED")
                 print(f"  Parallel capacities: {args.parallel_capacities}")
                 print(f"  Max calls/hour: {args.max_calls_per_hour}")
                 if capacity_filter:
@@ -4249,14 +4722,16 @@ Examples:
                     print(f"  Exclude capacities: {', '.join(exclude_capacities)}")
                 if capacity_priority:
                     print(f"  Capacity priority: {', '.join(capacity_priority)}")
-            
+
             if args.large_shared_tenants:
-                print(f"Mode: Large Shared Tenant (rate-limited, chunked processing)")
+                print("Mode: Large Shared Tenant (rate-limited, chunked processing)")
                 print(f"Max batches/hour: {args.max_batches_per_hour}")
                 if args.group_by_capacity:
-                    print(f"Capacity grouping: ENABLED")
+                    print("Capacity grouping: ENABLED")
                 if args.workspace_table_source:
-                    print(f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)")
+                    print(
+                        f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)"
+                    )
                 full_tenant_scan_chunked(
                     include_personal=include_personal,
                     max_batches_per_hour=args.max_batches_per_hour,
@@ -4269,14 +4744,16 @@ Examples:
                     capacity_filter=capacity_filter,
                     exclude_capacities=exclude_capacities,
                     capacity_priority=capacity_priority,
-                    workspace_table_source=args.workspace_table_source
+                    workspace_table_source=args.workspace_table_source,
                 )
             else:
                 print(f"Mode: Standard (MAX_PARALLEL_SCANS={MAX_PARALLEL_SCANS})")
                 if args.group_by_capacity:
-                    print(f"Capacity grouping: ENABLED")
+                    print("Capacity grouping: ENABLED")
                 if args.workspace_table_source:
-                    print(f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)")
+                    print(
+                        f"Workspace source: Table '{args.workspace_table_source}' (no API call for workspace list)"
+                    )
                 full_tenant_scan(
                     include_personal=include_personal,
                     curated_dir=args.curated_dir,
@@ -4287,124 +4764,150 @@ Examples:
                     capacity_filter=capacity_filter,
                     exclude_capacities=exclude_capacities,
                     capacity_priority=capacity_priority,
-                    workspace_table_source=args.workspace_table_source
+                    workspace_table_source=args.workspace_table_source,
                 )
-        
+
         elif args.incremental:
-            print("="*80)
+            print("=" * 80)
             print("INCREMENTAL SCAN")
-            print("="*80)
-            
+            print("=" * 80)
+
             # Calculate modified_since timestamp
             if args.hours:
                 hours_back = args.hours
-                modified_since = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+                modified_since = datetime.now(timezone.utc) - timedelta(
+                    hours=hours_back
+                )
                 print(f"Looking back: {hours_back} hours")
             else:
                 days_back = args.days if args.days else 1
                 modified_since = datetime.now(timezone.utc) - timedelta(days=days_back)
                 print(f"Looking back: {days_back} days")
-            
+
             # Format timestamp to match Microsoft's example: 2020-10-02T05:51:30.0000000Z (7 decimal places)
             modified_since_iso = modified_since.strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
             enable_hash = not args.no_hash_optimization
-            
+
             print(f"Hash optimization: {'enabled' if enable_hash else 'disabled'}")
             print(f"Modified since: {modified_since_iso}")
-            
+
             # Show lakehouse upload configuration if debug flag enabled (--debug includes this automatically)
             if args.lakehouse_upload_debug or args.debug:
                 if UPLOAD_TO_LAKEHOUSE:
                     if LAKEHOUSE_WORKSPACE_ID and LAKEHOUSE_ID:
-                        print(f"\n[DEBUG] Lakehouse upload: ENABLED")
+                        print("\n[DEBUG] Lakehouse upload: ENABLED")
                         print(f"[DEBUG]   Workspace ID: {LAKEHOUSE_WORKSPACE_ID}")
                         print(f"[DEBUG]   Lakehouse ID: {LAKEHOUSE_ID}")
                         print(f"[DEBUG]   Upload path: {LAKEHOUSE_UPLOAD_PATH}")
-                        
+
                         # Show authentication method
                         if UPLOAD_USE_USER_AUTH:
-                            print(f"[DEBUG]   Upload auth: Interactive user authentication (UPLOAD_USE_USER_AUTH=true)")
+                            print(
+                                "[DEBUG]   Upload auth: Interactive user authentication (UPLOAD_USE_USER_AUTH=true)"
+                            )
                             if not MSAL_AVAILABLE:
-                                print(f"[DEBUG]   ⚠️  WARNING: msal library not installed - will fall back to SPN auth")
-                        elif UPLOAD_TENANT_ID and UPLOAD_CLIENT_ID and UPLOAD_CLIENT_SECRET:
-                            print(f"[DEBUG]   Upload auth: Separate Service Principal (UPLOAD_TENANT_ID/CLIENT_ID)")
+                                print(
+                                    "[DEBUG]   ⚠️  WARNING: msal library not installed - will fall back to SPN auth"
+                                )
+                        elif (
+                            UPLOAD_TENANT_ID
+                            and UPLOAD_CLIENT_ID
+                            and UPLOAD_CLIENT_SECRET
+                        ):
+                            print(
+                                "[DEBUG]   Upload auth: Separate Service Principal (UPLOAD_TENANT_ID/CLIENT_ID)"
+                            )
                         else:
-                            print(f"[DEBUG]   Upload auth: Main Service Principal (FABRIC_SP_TENANT_ID/CLIENT_ID)")
+                            print(
+                                "[DEBUG]   Upload auth: Main Service Principal (FABRIC_SP_TENANT_ID/CLIENT_ID)"
+                            )
                     else:
-                        print(f"\n[DEBUG] ⚠️  Lakehouse upload configured but missing workspace_id or lakehouse_id")
+                        print(
+                            "\n[DEBUG] ⚠️  Lakehouse upload configured but missing workspace_id or lakehouse_id"
+                        )
                         print(f"[DEBUG]   UPLOAD_TO_LAKEHOUSE: {UPLOAD_TO_LAKEHOUSE}")
-                        print(f"[DEBUG]   LAKEHOUSE_WORKSPACE_ID: {LAKEHOUSE_WORKSPACE_ID or 'NOT SET'}")
+                        print(
+                            f"[DEBUG]   LAKEHOUSE_WORKSPACE_ID: {LAKEHOUSE_WORKSPACE_ID or 'NOT SET'}"
+                        )
                         print(f"[DEBUG]   LAKEHOUSE_ID: {LAKEHOUSE_ID or 'NOT SET'}")
                 else:
-                    print(f"\n[DEBUG] Lakehouse upload: DISABLED")
+                    print("\n[DEBUG] Lakehouse upload: DISABLED")
                 print()  # Blank line after debug output
-            
+
             incremental_update(
                 modified_since_iso=modified_since_iso,
                 include_personal=not args.no_personal,
                 enable_hash_optimization=enable_hash,
                 curated_dir=args.curated_dir,
-                table_name=args.table_name
+                table_name=args.table_name,
             )
-        
+
         elif args.scan_id:
-            print("="*80)
+            print("=" * 80)
             print("RETRIEVE SCAN RESULT BY ID")
-            print("="*80)
+            print("=" * 80)
             print(f"Scan ID: {args.scan_id}")
-            
+
             get_scan_result_by_id(
                 scan_id=args.scan_id,
                 curated_dir=args.curated_dir,
                 table_name=args.table_name,
-                merge_with_existing=not args.no_merge
+                merge_with_existing=not args.no_merge,
             )
-        
+
         elif args.health_check:
-            print("="*80)
+            print("=" * 80)
             print("SCANNER API HEALTH CHECK")
-            print("="*80)
-            
+            print("=" * 80)
+
             try:
                 health = check_scanner_api_health()
-                
+
                 print(f"\nStatus: {health['status'].upper()}")
-                print(f"Safe to proceed: {'✅ YES' if health['safe_to_proceed'] else '⚠️  NO'}")
-                print(f"\nDetails:")
+                print(
+                    f"Safe to proceed: {'✅ YES' if health['safe_to_proceed'] else '⚠️  NO'}"
+                )
+                print("\nDetails:")
                 print(f"  Active scans: {health['active_scans']}")
-                print(f"  Recommended MAX_PARALLEL_SCANS: {health['recommended_max_parallel']}")
-                
-                if health['status'] == 'heavy':
-                    print(f"\n⚠️  WARNING: Heavy API usage detected!")
-                    print(f"  Wait {health.get('cooldown_minutes', 10)} minutes before scanning")
-                elif health['status'] == 'moderate':
-                    print(f"\n⚠️  Moderate API usage - proceed with caution")
-                    print(f"  Recommended: MAX_PARALLEL_SCANS=1-2")
+                print(
+                    f"  Recommended MAX_PARALLEL_SCANS: {health['recommended_max_parallel']}"
+                )
+
+                if health["status"] == "heavy":
+                    print("\n⚠️  WARNING: Heavy API usage detected!")
+                    print(
+                        f"  Wait {health.get('cooldown_minutes', 10)} minutes before scanning"
+                    )
+                elif health["status"] == "moderate":
+                    print("\n⚠️  Moderate API usage - proceed with caution")
+                    print("  Recommended: MAX_PARALLEL_SCANS=1-2")
                 else:
-                    print(f"\n✅ API clear - safe to scan")
-                    print(f"  You can increase MAX_PARALLEL_SCANS to 3-5 if needed")
-                
+                    print("\n✅ API clear - safe to scan")
+                    print("  You can increase MAX_PARALLEL_SCANS to 3-5 if needed")
+
             except NameError:
-                print("ERROR: check_scanner_api_health() function not found in this version")
+                print(
+                    "ERROR: check_scanner_api_health() function not found in this version"
+                )
                 print("This feature may not be available yet.")
-        
+
         elif args.analyze_direction:
-            print("="*80)
+            print("=" * 80)
             print("CONNECTION DIRECTIONALITY ANALYSIS")
-            print("="*80)
-            
+            print("=" * 80)
+
             analyze_connection_directionality(
                 include_activity_logs=args.with_activity,
                 activity_days_back=args.activity_days,
-                output_dir=args.output_dir
+                output_dir=args.output_dir,
             )
-        
+
         elif args.json_dir:
-            print("="*80)
+            print("=" * 80)
             print("PROCESS JSON DIRECTORY")
-            print("="*80)
+            print("=" * 80)
             print(f"Directory: {args.json_dir}")
-            
+
             run_cloud_connection_scan(
                 enable_full_scan=False,
                 enable_incremental_scan=False,
@@ -4412,33 +4915,35 @@ Examples:
                 json_directory_path=args.json_dir,
                 json_merge_with_existing=not args.no_merge,
                 curated_dir=args.curated_dir,
-                table_name=args.table_name
+                table_name=args.table_name,
             )
-        
-        print("\n" + "="*80)
+
+        print("\n" + "=" * 80)
         print("✅ OPERATION COMPLETED SUCCESSFULLY")
-        print("="*80)
-        
+        print("=" * 80)
+
         # Show final API stats if any calls were made
         stats = get_api_call_stats()
-        if stats['calls'] > 0:
+        if stats["calls"] > 0:
             print_api_call_stats()
-        
+
     except KeyboardInterrupt:
         print("\n\n⚠️  Operation cancelled by user")
         stats = get_api_call_stats()
-        if stats['calls'] > 0:
+        if stats["calls"] > 0:
             print_api_call_stats()
         return 1
     except Exception as e:
         print(f"\n\n❌ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
-    
+
     return 0
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())
